@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="keep_channel">Kept songs</string>
+    <string name="keep_channel_about">Songs being kept on this phone to play offline</string>
+</resources>

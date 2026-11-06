@@ -1,0 +1,284 @@
+package app.aether.ui.detail
+
+import android.content.Context
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.net.ConnectivityManager
+import android.view.TextureView
+import androidx.annotation.OptIn
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import app.aether.core.designsystem.art.ArtTreatment
+import app.aether.core.designsystem.art.Picture
+import app.aether.core.designsystem.art.Pictures
+import app.aether.core.designsystem.art.TreatedArtwork
+import app.aether.core.designsystem.component.Strapline
+import app.aether.core.designsystem.component.Txt
+import app.aether.core.designsystem.theme.Motion
+import app.aether.core.designsystem.theme.Space
+import app.aether.core.designsystem.theme.Type
+import app.aether.core.model.Album
+import app.aether.core.model.ArtistArt
+import app.aether.core.model.ArtistPage
+import app.aether.core.model.Track
+import app.aether.ui.FilmCache
+import app.aether.ui.LocalRoomsHidden
+import app.aether.ui.common.LocalContainer
+import app.aether.ui.pageLanded
+import app.aether.ui.placedWhile
+
+/** A little taller than it's wide: a portrait fills it without being cropped into. */
+private const val HeroAspect = 0.94f
+
+/** Black and white, with a little contrast about the middle: the film as the page's pictures are printed. */
+private val FilmPrint = ArtTreatment.Monochrome(contrast = 1.2f, grain = 0.6f)
+
+/**
+ * The head of an artist's page. The source's picture is there first, always, on any connection. If
+ * there's a portrait it comes up over that, and if there's a film, that comes up over the portrait
+ * from its first frame, however long the connection took to bring it. The artist's name is set in
+ * the script until their own lettering, for those who have one, comes up in its place, in white.
+ */
+@Composable
+fun ArtistHero(page: ArtistPage) {
+    val container = LocalContainer.current
+    val context = LocalContext.current
+    val consent by container.settings.artistArt.collectAsStateWithLifecycle()
+    val saver by container.settings.efficient.collectAsStateWithLifecycle()
+    val id = page.artist.id.value
+    val art by produceState<ArtistArt?>(container.artistArt.cached(id).takeIf { consent }, id, consent) {
+        if (!consent) {
+            value = null
+            return@produceState
+        }
+        val own = page.sections.flatMap { it.items }.filter { it is Album || it is Track }.map { it.title }
+        value = container.artistArt.find(id, page.artist.name, page.topTracks.map { it.title } + own)
+    }
+    val portrait = art?.picture
+    val logo = art?.logo
+    // No film on the data saver.
+    val film = art?.film?.takeIf { !saver }
+
+    val hidden = LocalRoomsHidden.current
+    val elsewhere by remember { derivedStateOf { hidden() } }
+    val landed = pageLanded()
+
+    // Each comes up over what's beneath only once it's really here, and what it has covered stops
+    // being drawn at all.
+    val portraitUp = remember { Animatable(0f, visibilityThreshold = 0.002f) }
+    val filmUp = remember { Animatable(0f, visibilityThreshold = 0.002f) }
+    val logoUp = remember { Animatable(0f, visibilityThreshold = 0.002f) }
+    var filmFramed by remember { mutableStateOf(false) }
+    val portraitUrl = portrait?.url(PortraitPx)
+    LaunchedEffect(portraitUrl) {
+        if (portraitUrl == null) return@LaunchedEffect
+        Pictures.fetch(context, portraitUrl, PortraitPx)
+        portraitUp.animateTo(1f, Rising)
+    }
+    LaunchedEffect(logo) {
+        if (logo == null) return@LaunchedEffect
+        Pictures.fetch(context, logo, LogoPx)
+        logoUp.animateTo(1f, Rising)
+    }
+    LaunchedEffect(filmFramed) { if (filmFramed) filmUp.animateTo(1f, Rising) }
+
+    val portraitCovers by remember { derivedStateOf { portraitUp.value >= 0.999f } }
+    val filmCovers by remember { derivedStateOf { filmUp.value >= 0.999f } }
+
+    Box(Modifier.fillMaxWidth().aspectRatio(HeroAspect).clipToBounds()) {
+        // The source's picture is a wide banner: blown up to fill this box it was only a pair of eyes.
+        // It's only a little larger than it is, below the status bar's frost so that no face is under
+        // it, and falls away to black above and below.
+        val banner = page.artist.artwork
+        val wide = banner.aspect > 1.15f
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .then(if (wide) Modifier.padding(top = BannerTop).aspectRatio((banner.aspect / BannerZoom).coerceAtLeast(HeroAspect)) else Modifier.fillMaxSize())
+                .placedWhile { !portraitCovers && !filmCovers },
+        ) {
+            TreatedArtwork(banner, FilmPrint, Modifier.fillMaxSize(), sizeHintPx = 1440)
+            if (wide) Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black, 0.22f to Color.Transparent, 0.6f to Color.Transparent, 1f to Color.Black)))
+        }
+        if (portrait != null) {
+            Box(Modifier.fillMaxSize().placedWhile { !filmCovers }.graphicsLayer { alpha = portraitUp.value }) {
+                TreatedArtwork(portrait, FilmPrint, Modifier.fillMaxSize(), sizeHintPx = PortraitPx)
+            }
+        }
+        // Started once the page has arrived, so that making a player never touches its slide.
+        if (film != null && landed) {
+            ArtistFilm(
+                url = film,
+                playing = !elsewhere,
+                onFirstFrame = { filmFramed = true },
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = filmUp.value },
+            )
+        }
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.5f), 0.35f to Color.Transparent, 1f to Color.Black)))
+        Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(contentAlignment = Alignment.BottomCenter) {
+                Txt(
+                    page.artist.name,
+                    Type.name(page.artist.name),
+                    align = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = Space.edge).graphicsLayer { alpha = 1f - logoUp.value },
+                )
+                if (logo != null) {
+                    Picture(
+                        logo,
+                        LogoPx,
+                        // As wide as it may be and no taller than the name's place: a square-ish mark like
+                        // BTS's fits by its height, and the page's lines below keep theirs.
+                        Modifier
+                            .padding(bottom = 4.dp)
+                            .widthIn(max = LocalConfiguration.current.screenWidthDp.dp * 0.68f)
+                            .heightIn(max = LogoTallest)
+                            .aspectRatio(art?.logoAspect ?: 1f)
+                            .graphicsLayer { alpha = logoUp.value },
+                        colorFilter = ColorFilter.tint(Color.White),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+            }
+            page.monthlyAudience?.let {
+                Spacer(Modifier.height(12.dp))
+                Strapline(it, color = Color.White.copy(alpha = 0.78f))
+            }
+        }
+    }
+}
+
+/** How much larger than the screen's width a wide banner stands, so that it isn't a thin strip. */
+private const val BannerZoom = 1.5f
+
+/** Where a wide banner starts: below the status bar's frost. */
+private val BannerTop = 64.dp
+
+/** The tallest an artist's lettering stands. */
+private val LogoTallest = 108.dp
+
+private const val PortraitPx = 1400
+private const val LogoPx = 1000
+private val Rising = Motion.fluid(0.7f, 1f, 0.002f)
+
+/**
+ * The artist's short film, looping and silent, in black and white. It never touches the music: it
+ * has no sound, asks for no audio focus, and is limited to the screen's width (less on a metered
+ * connection). What's been fetched is kept, so it starts at once the next time. It rests when it's
+ * out of sight or the app is, and is let go when the page is.
+ */
+@OptIn(UnstableApi::class)
+@Composable
+private fun ArtistFilm(url: String, playing: Boolean, onFirstFrame: () -> Unit, modifier: Modifier) {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val player = remember(url) {
+        val metered = (context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)?.isActiveNetworkMetered == true
+        val side = if (metered) 540 else 1080
+        val data = CacheDataSource.Factory()
+            .setCache(FilmCache.of(context))
+            .setUpstreamDataSourceFactory(DefaultDataSource.Factory(context))
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        ExoPlayer.Builder(context).build().apply {
+            trackSelectionParameters = trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                .setMaxVideoSize(side, side)
+                .build()
+            setMediaSource(
+                HlsMediaSource.Factory(data).createMediaSource(
+                    MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_M3U8).build(),
+                ),
+            )
+            repeatMode = Player.REPEAT_MODE_ONE
+            volume = 0f
+            prepare()
+        }
+    }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() = onFirstFrame()
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+    DisposableEffect(lifecycle, playing, player) {
+        player.playWhenReady = playing && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> player.playWhenReady = playing
+                Lifecycle.Event.ON_STOP -> player.playWhenReady = false
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    AndroidView(
+        factory = { c ->
+            TextureView(c).also { view ->
+                view.setLayerPaint(Paint().apply { colorFilter = ColorMatrixColorFilter(filmMatrix()) })
+                player.setVideoTextureView(view)
+            }
+        },
+        modifier = modifier,
+    )
+}
+
+/** No colour, and the print's contrast about the middle. */
+private fun filmMatrix(): ColorMatrix {
+    val contrast = 1.2f
+    val offset = (1f - contrast) * 128f
+    val r = 0.2126f * contrast
+    val g = 0.7152f * contrast
+    val b = 0.0722f * contrast
+    return ColorMatrix(floatArrayOf(r, g, b, 0f, offset, r, g, b, 0f, offset, r, g, b, 0f, offset, 0f, 0f, 0f, 1f, 0f))
+}

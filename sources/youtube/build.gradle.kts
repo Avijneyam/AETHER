@@ -1,0 +1,34 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+}
+
+dependencies {
+    api(project(":core:model"))
+    api(project(":ytmusic"))
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
+}
+
+// Resolves a few songs' streams live and proves each serves audio (needs the network).
+tasks.register<JavaExec>("streamCheck") {
+    group = "verification"
+    description = "Resolves YouTube Music streams live and checks both ends of each serve audio."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("app.aether.sources.youtube.StreamCheckKt")
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Pure black from the first frame: the system splash is black with nothing on it, so the
+         liquid-lens boot is the first thing a listener sees. -->
+    <style name="Theme.Aether" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31" xmlns:tools="http://schemas.android.com/tools">@android:color/black</item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31" xmlns:tools="http://schemas.android.com/tools">@drawable/splash_blank</item>
+    </style>
+</resources>

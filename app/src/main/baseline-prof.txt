@@ -1,0 +1,6 @@
+# AETHER's own code, marked hot and for loading at start-up: wildcards rather than a recorded
+# profile, as BitChord ships (a recorded one can only cover the paths the recording walked, and goes
+# stale with every change). The libraries bring their own. What this buys is the first time anything
+# runs: the first page opened, the first folder flown, without the interpreter's stumble.
+HSPLapp/aether/**->**(**)**
+Lapp/aether/**;
