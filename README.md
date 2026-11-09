@@ -1,8 +1,8 @@
 <h1 align="center">AETHER</h1>
 
 <p align="center">
-A music app for Android. YouTube Music's catalogue, the sound first,<br>
-in a black and white world of glass, halftone and type.
+<b>A premium music player for Android.</b><br>
+Built around the sound. Unlike anything you've used.
 </p>
 
 <p align="center">
@@ -19,50 +19,47 @@ in a black and white world of glass, halftone and type.
   <img src="docs/images/profile.jpg" width="24%" alt="A day of listening drawn as a dial">
 </p>
 
-AETHER is built for people who care how music looks and sounds. Its background is pure black, its pictures are black and white, and the only colour on screen comes from the music's own covers. Every label about sound quality is measured. If the app can't measure it, it says nothing.
+AETHER is made the way a fine watch is made: every part considered, nothing there for show. Pure black. One glass. Three typefaces. The only colour on the screen comes from the music you're playing.
 
-Version 0.1.0, in final polish. Android 10 or later, portrait only.
+It plays all of YouTube Music and your own files through an audio path that reports exactly what it measured, in an interface no other music app looks or moves like.
 
-## What's in it
+## Zero nonsense
 
-**Listening**
-- The whole YouTube Music catalogue: Home, Explore, Charts by country, Moods and genres, albums, artists, playlists, podcasts, search and radio. Works as a guest, or signed in on Google's own page.
-- Your own music from the phone, with folders chosen in Settings.
-- Songs kept for offline, one at a time or whole playlists that pick up new additions on Wi-Fi.
-- Sources you add yourself, by address, using the open addon protocol.
+- **No ads, no tracking, no analytics.** Not one telemetry or crash-reporting SDK.
+- **No account and no server of ours.** Your likes, playlists, history and statistics live on your phone.
+- **No paywalls, no upsells, no nagging.** Everything is there from the first launch.
+- **No claim it can't prove.** "Lossless", "Hi-Res" and "Bit-perfect" appear only when the decoder measured it or the path was verified. Switch on a tuning and "Bit-perfect" takes itself away.
+- **No dead ends.** No placeholder content and no button without an action. If a source can't do something, the app says so.
 
-**Now Playing**
-- A dial for seeking, and a cover you can touch to see it as a print, halftone, ASCII or dither.
-- The album's short film, in colour, for albums that have one. The cover shows first and the film takes over once it has loaded, fading in an arc round the dial.
-- Lyrics two ways: words as a constellation, or the song written out by hand as one unbroken line.
+## Quality first
 
-**Sound**
-- The decoder's real format is what's shown. "Lossless", "Hi-Res" and "Bit-perfect" appear only when measured or verified.
-- Bit-perfect output to a USB DAC on Android 14 and later.
-- An equaliser with seven tunings, measured corrections for 39 headphones by name (AirPods Max and Pro, Sennheiser, Sony, Marshall, Bose and more), and profiles imported from AutoEq, squig.link, Equalizer APO or Wavelet files.
+**An honest signal path.** Audio leaves the decoder as float where the device takes it, so nothing above 16 bits is cut, and the app never resamples. With a USB DAC on Android 14 or later, the path goes bit-perfect, and the label appears only once the phone confirms it.
 
-**Profile**
-- Your listening, worked out on the phone: a stack of your most played artists, your hours as a dial, genres, kinds of song, and questions answered by songs.
-- Metal charge cards of your profile or any song, black or silver, exported at 1080 by 1920 for a story.
+**An equaliser that knows your headphones.** Choose the pair you're wearing from 39 models, including AirPods Max and Pro, Sennheiser, Sony, Marshall and Bose, and it applies a correction made from that model's published measurements. Seven tunings of our own are there too, and profiles from AutoEq, squig.link, Equalizer APO or Wavelet import in a tap. Boosts can't clip, and with nothing chosen every sample passes through untouched.
 
-**The feel**
-- One liquid glass, refracting what's behind it, used for everything you can touch.
-- Motion on Apple's spring physics, so that an interrupted movement keeps its speed.
-- Keeping a song sends its cover into the foot of the phone with a ripple through the whole screen.
-- Behind Listen, a slideshow of Greek gods where the halftone dots of one statue fly across and reassemble into the next.
+**Your whole library.** The complete YouTube Music catalogue, as a guest or signed in on Google's own page. Your own FLAC, ALAC and WAV files, folder by folder. Songs and whole playlists kept for offline, picking up new additions on Wi-Fi. Your own server, added by address over an open protocol.
 
-## Principles
+## Nothing else does this
 
-- **Quality is measured, never claimed.**
-- **Open media only.** Added sources play unencrypted streams. No content-key decryption, no licence proxies, and no sources bundled with the app.
-- **No analytics and no tracking.** There are no telemetry or crash-reporting SDKs.
-- **Nothing fake.** No placeholder content and no buttons that do nothing.
+**Statues that rearrange themselves.** Behind Listen stand twelve figures from antiquity, printed in halftone. Every nine seconds, each dot lifts, crosses the screen and lands as part of the next god, with the face arriving last.
 
-The full rules are in [`CLAUDE.md`](CLAUDE.md).
+**A dial, in place of a progress bar.** Now Playing is an instrument: an arc of fine marks and a red needle you take in your hand.
+
+**Covers that move.** Where an album has a film, the cover gives way to it in full colour, fading along an arc that follows the dial. On a slow connection, the cover simply stays.
+
+**Metal you can send.** Your listening engraved on a black or brushed silver charge card, and any song on a card of its own, exported at story size.
+
+**A song going into the phone.** Keep a song and its cover lifts off, carries to the foot of the screen and sinks in, and the whole display ripples as it lands.
+
+**Lyrics drawn by hand.** Words as a night sky of constellations, or the entire song written as one unbroken line.
+
+**A portrait of how you listen.** Your most played artists as a deck to throw aside, your day as a dial, your genres and habits, all worked out on the phone and shown to nobody else.
+
+**One glass, and real physics.** Everything you can touch is the same liquid glass, bending what's behind it. Every movement runs on Apple's spring physics, so a gesture interrupted keeps its speed.
 
 ## Privacy
 
-AETHER has no accounts or servers of its own. Your likes, playlists, history and statistics stay on your phone, and a YouTube sign-in is sealed with the Android Keystore. Apart from fetching music, the app makes these requests, each of which can be turned off in Settings:
+Your YouTube sign-in is sealed with the Android Keystore, and a card leaves the phone only when you send it. Apart from fetching music, AETHER makes three kinds of request. Each can be turned off in Settings, and none says anything about you.
 
 | For | Asks | Sends |
 |---|---|---|
@@ -70,24 +67,22 @@ AETHER has no accounts or servers of its own. Your likes, playlists, history and
 | Artist and album art | Apple's public pages | An artist's name and an album's title |
 | Song video | Apple's public pages | A song's title and artist |
 
-A card leaves the phone only when you send it from Android's share sheet.
+## Principles
+
+Quality is measured, never claimed. Added sources play open media only: no content-key decryption, no licence proxies, no sources bundled with the app. Every change is judged first by how it looks and feels on the phone. The full rules are in [`CLAUDE.md`](CLAUDE.md).
 
 ## Building
 
-You need JDK 17 or later and the Android SDK with API 37. Point `local.properties` at the SDK.
+Version 0.1.0, in final polish. Runs on Android 10 or later, in portrait. You need JDK 17 or later and the Android SDK with API 37, with `local.properties` pointing at the SDK.
 
 ```sh
-./gradlew :app:installDebug                                  # build and install on a phone
+./gradlew :app:installDebug                                          # build and install on a phone
 ./gradlew :ytmusic:test :core:model:test :player:testDebugUnitTest   # unit tests
-./gradlew :ytmusic:liveCheck                                 # check every YouTube Music surface live
-./gradlew :app:assembleRelease                               # release APK
+./gradlew :ytmusic:liveCheck                                         # check every YouTube Music surface live
+./gradlew :app:assembleRelease                                       # release APK
 ```
 
-Release builds are currently signed with the debug key. Add your own signing config before distributing one.
-
-Some effects need a newer Android, and each falls back quietly on older phones: AGSL shaders need 13, and the dot morph and bit-perfect output need 14.
-
-## How it's organised
+Release builds are currently signed with the debug key, so add your own signing config before distributing one. AGSL shaders need Android 13, and the dot morph and bit-perfect output need 14. Older phones fall back quietly.
 
 | Module | What it holds |
 |---|---|
@@ -100,7 +95,7 @@ Some effects need a newer Android, and each falls back quietly on older phones: 
 | `ytmusic` | The YouTube Music client and its fail-soft parser |
 | `sources:*` | YouTube, the phone, addons, and Apple's public art |
 
-Screens only ever see `core:model` types, so a new source is a new `sources:*` module and nothing else changes. More in [`docs/product.md`](docs/product.md), [`docs/architecture.md`](docs/architecture.md) and [`docs/ytmusic-verification.md`](docs/ytmusic-verification.md).
+Design and engineering notes are in [`docs/product.md`](docs/product.md), [`docs/architecture.md`](docs/architecture.md) and [`docs/ytmusic-verification.md`](docs/ytmusic-verification.md).
 
 ## Credits
 
