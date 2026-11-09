@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.layout.onPlaced
 import app.aether.core.designsystem.art.ArtTreatment
 import app.aether.core.designsystem.art.TreatedArtwork
 import app.aether.core.designsystem.component.DragSheet
@@ -76,6 +77,7 @@ import app.aether.core.designsystem.theme.Motion
 import app.aether.core.designsystem.theme.Sans
 import app.aether.core.designsystem.theme.Space
 import app.aether.core.designsystem.theme.Type
+import app.aether.core.model.songCount
 import app.aether.core.model.HeardFormat
 import app.aether.core.model.Lyrics
 import app.aether.core.model.Outcome
@@ -204,7 +206,7 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
             Modifier.fillMaxSize(),
             hideContent = hidden,
             content = {
-                // The cover's light, far behind everything: the only colour in the room. A few dozen
+                // The cover's light, far behind everything. A few dozen
                 // pixels of the cover, blurred once and cached, stretched over the screen.
                 SoftArt(track.artwork, Modifier.fillMaxSize().alpha(0.34f), px = 32)
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.2f), 0.5f to Color.Black.copy(alpha = 0.6f), 1f to Color.Black)))
@@ -223,7 +225,7 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
                         container.settings.setArtwork((treatmentIndex + 1).mod(ArtTreatment.Cycle.size))
                     },
                     onSwipe = { dir -> haptics.strong(); if (dir > 0) actions.playback.previous() else actions.playback.next() },
-                    modifier = Modifier.at(stage.print),
+                    modifier = Modifier.at(stage.print).onPlaced { actions.keep.cover = it },
                 )
                 Song(
                     track = track,
@@ -826,7 +828,7 @@ private fun QueueSheet(state: PlaybackState) {
             Column(Modifier.weight(1f)) {
                 Txt("Up next", Type.Display)
                 Spacer(Modifier.height(6.dp))
-                Strapline("${state.upcoming.size} songs")
+                Strapline(songCount(state.upcoming.size))
             }
             if (state.upcoming.isNotEmpty()) GlassPill("Clear", icon = Glyph.Trash, onClick = { actions.playback.clearUpcoming() }, small = true)
         }

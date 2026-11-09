@@ -12,8 +12,14 @@
   for AETHER as `app/src/main/res/raw/welcome_water.mp4`.
 - **Mood and genre photographs**: 53 Pexels photographs under the Pexels License, reduced and made black
   and white; listed in `MOOD_PHOTOS.md`.
-- **Artist art lookup** (`sources/apple`): after BitChord's `AppleArtistArt.kt` and `AppleCatalogue.kt`
+- **Artist and album art lookup** (`sources/apple`): after BitChord's `AppleArtistArt.kt` and `AppleCatalogue.kt`
   (kushagrasinghx/BitChord, GPL-3.0). The pictures and films it shows are Apple Music's and the artists',
   fetched at run time for the listener and not part of AETHER.
+- **Continuous line lyrics** (`app/.../ui/lyrics/line`): from PODIUM (`feature/nowplaying/line` and
+  `LyricClock`, GPL-3.0), with its hand-authored single-stroke letters. Ink changed to white on black.
+- **Phone music folders** (`core/model/.../Folders.kt`, `ui/settings/MusicFolders.kt`): from PODIUM
+  (`sources/api/Folders.kt`, `feature/settings/MusicFolders.kt`, GPL-3.0).
+- **Orbit rings and stats band** (`app/.../ui/profile`): rebuilt in Compose after Orbit Ring Stats by ham7a311 and
+  Stats Band by kuratlielia (21st.dev, MIT).
 - **Liquid-lens boot film**: optical model adapted from Travis Fischer's MIT-licensed recreation, via the
   HorizonX "Liquid Lens Logo" export the listener supplied.

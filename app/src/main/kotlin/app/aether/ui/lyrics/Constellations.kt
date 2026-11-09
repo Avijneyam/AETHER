@@ -75,6 +75,8 @@ import app.aether.core.lyrics.WordTiming
 import app.aether.core.model.Track
 import app.aether.ui.common.Load
 import app.aether.ui.common.LocalContainer
+import app.aether.ui.lyrics.line.ContinuousLine
+import app.aether.ui.lyrics.line.LineScript
 import app.aether.ui.player.rememberLyrics
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -134,7 +136,8 @@ private fun rememberWords(track: Track): Words {
  * and glowing, joined to the last by a hairline that draws itself across; once sung it settles to a
  * small word beside its star. When the line ends the camera drifts across the sky to where the next
  * line forms, on a slow elastic spring, drawing back a little while it travels and settling in as
- * it arrives. Nothing here can be touched: it plays, and pulls down (or the grabber) to go.
+ * it arrives. Nothing here can be touched: it plays, and pulls down (or the grabber) to go. Or, as
+ * the listener chooses in Settings, the song is written by hand as one line ([ContinuousLine]).
  */
 @Composable
 fun LyricsStage(track: Track, pane: DragState) {
@@ -142,12 +145,26 @@ fun LyricsStage(track: Track, pane: DragState) {
     val words = rememberWords(track)
     val position = container.playback.position.collectAsStateWithLifecycle()
     val playback by container.playback.state.collectAsStateWithLifecycle()
+    val style by container.settings.lyricsStyle.collectAsStateWithLifecycle()
+    val asLine = style == 1
+    val positionNow = remember(container) { { container.playback.positionNow() } }
     Box(Modifier.fillMaxSize().background(Ink.Black)) {
         when (words) {
             Words.Waiting -> GridDots(Modifier.align(Alignment.Center))
-            is Words.Timed -> Constellations(words.lines, position, playback.isPlaying, Modifier.fillMaxSize())
+            is Words.Timed -> if (asLine) {
+                val script = remember(words.lines, track.durationMs) { LineScript.synced(words.lines, track.durationMs) }
+                ContinuousLine(positionNow, script, track.id.toString(), playback.isPlaying, "Lyrics of ${track.title}, written as one line")
+            } else {
+                Constellations(words.lines, position, playback.isPlaying, Modifier.fillMaxSize())
+            }
             is Words.Untimed -> Untimed(words.lines, Modifier.fillMaxSize())
-            Words.Instrumental -> Quiet("Instrumental", "No words: just listen.", Modifier.align(Alignment.Center))
+            Words.Instrumental -> if (asLine) {
+                // A song without words is drawn too: one composition across it.
+                val script = remember(track.durationMs) { LineScript.instrumental(track.durationMs) }
+                ContinuousLine(positionNow, script, track.id.toString(), playback.isPlaying, "Instrumental. This song has no words.")
+            } else {
+                Quiet("Instrumental", "No words: just listen.", Modifier.align(Alignment.Center))
+            }
             is Words.Silent -> Quiet(words.title, words.body, Modifier.align(Alignment.Center))
         }
         Column(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -158,6 +175,7 @@ fun LyricsStage(track: Track, pane: DragState) {
         val credit = when (words) {
             is Words.Timed -> "Words: ${words.credit}" + if (words.estimated) "  ·  timed by AETHER" else ""
             is Words.Untimed -> "Words: ${words.credit}"
+            Words.Instrumental -> if (asLine) "Instrumental" else null
             else -> null
         }
         if (credit != null) {

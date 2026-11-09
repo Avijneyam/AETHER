@@ -96,14 +96,14 @@ class FolderPose {
  * the head of its page, so they're the same pictures in memory: the folder that flies to its page
  * arrives exactly as it left, on the first frame, every time.
  */
-private const val BackPx = 560
-private const val FilePx = 200
+private const val FilePx = 360
 private const val SoftPx = 40
 
 /**
- * A playlist as a glass folder (the folder recording): the cover fills the folder's back, songs
- * peek out as small cards, and the front is frosted glass of that same cover with the title. It
- * leans toward the finger; pressed, its songs rise; tapped, it opens: the front tips away and the
+ * A playlist as a grey glass folder (the folder recording): its songs peek out as small cards, in
+ * their own colour, and the front is frosted glass with the title. The folder itself is always
+ * neutral: frosted from a cover's colours it went to mud, so all it takes from the cover is its light
+ * and shade. It leans toward the finger; pressed, its songs rise; tapped, it opens: the front tips away and the
  * songs lift out, before [onOpen] runs. [opened] draws it held open, as it stands at the head of its
  * own page. Only presentation: the playlist itself lives elsewhere.
  *
@@ -147,19 +147,17 @@ fun FolderCard(
     // painting them again at all is what every folder on screen cost on every frame anything moved.
     val kept = Modifier.retained()
 
-    val back = rememberPictureState(artwork.url(BackPx), BackPx)
+    // A folder the source named no songs for still holds its own cover.
+    val cards = remember(files, artwork) { files.ifEmpty { if (artwork.isEmpty) emptyList() else listOf(FolderFile("", artwork)) } }
     val soft = rememberPictureState(artwork.url(SoftPx), SoftPx, software = true, transformation = SoftBlur)
-    val f0 = rememberPictureState(files.getOrNull(0)?.artwork?.url(FilePx), FilePx)
-    val f1 = rememberPictureState(files.getOrNull(1)?.artwork?.url(FilePx), FilePx)
-    val f2 = rememberPictureState(files.getOrNull(2)?.artwork?.url(FilePx), FilePx)
-    val backPaint = rememberPicturePaint(back.bitmap)
+    val f0 = rememberPictureState(cards.getOrNull(0)?.artwork?.url(FilePx), FilePx)
+    val f1 = rememberPictureState(cards.getOrNull(1)?.artwork?.url(FilePx), FilePx)
+    val f2 = rememberPictureState(cards.getOrNull(2)?.artwork?.url(FilePx), FilePx)
     val softPaint = rememberPicturePaint(soft.bitmap)
     val filePaints = listOf(rememberPicturePaint(f0.bitmap), rememberPicturePaint(f1.bitmap), rememberPicturePaint(f2.bitmap))
-    val backShown = back.arrival()
     val softShown = soft.arrival()
     val fileShown = listOf(f0.arrival(), f1.arrival(), f2.arrival())
-    val fileStates = listOf(f0, f1, f2)
-    val labels = files.take(3).map { it.label.withoutEmoji().uppercase() }
+    val labels = cards.take(3).map { it.label.withoutEmoji().uppercase() }
 
     Column(modifier.width(width), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
@@ -214,7 +212,9 @@ fun FolderCard(
             Spacer(
                 kept.fillMaxSize().drawWithCache {
                     val backPath = outlinePath(FolderBackShape, size, layoutDirection, this)
-                    val backShade = Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.05f), Color.Black.copy(alpha = 0.35f)))
+                    val backFill = Brush.verticalGradient(listOf(FolderBackTop, FolderBackFoot))
+                    // Only as dark as a label needs, at the top of the card where it sits.
+                    val cardShade = Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.5f), 0.5f to Color.Black.copy(alpha = 0.1f), 1f to Color.Transparent, endY = size.height * 0.4f)
                     val pad = 5.dp.toPx()
                     // Each file's label, ellipsised inside its own card as it always was.
                     fun labelsFor(folderWidth: Float) = labels.mapIndexed { i, label ->
@@ -232,9 +232,7 @@ fun FolderCard(
                     // In flight, as they read on the folder it left too: they give way to the larger set.
                     val smallLayouts = if (flying != null) labelsFor(size.width * small) else labelLayouts
                     onDrawBehind {
-                        drawPath(backPath, Ink.Charcoal)
-                        backPaint?.draw(this, backPath, Rect0(size), backShown(), Mono)
-                        drawPath(backPath, backShade)
+                        drawPath(backPath, backFill)
                         // Files: the playlist's songs, peeking out and rising.
                         val opening = open()
                         // A point on the folder in flight, as many of its own points as make one on screen.
@@ -250,8 +248,8 @@ fun FolderCard(
                                 rotate(angle, pivot = Offset(fw / 2f, fh / 2f)) {
                                     val card = Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, fw, fh, CornerRadius(5.dp.toPx() * pt))) }
                                     drawPath(card, Ink.Coal)
-                                    filePaints[i]?.draw(this, card, Rect0(Size(fw, fh)), fileShown[i](), Mono)
-                                    drawPath(card, Color.Black.copy(alpha = 0.45f))
+                                    filePaints[i]?.draw(this, card, Rect0(Size(fw, fh)), fileShown[i]())
+                                    drawPath(card, cardShade)
                                     if (flying == null) {
                                         val label = labelLayouts[i]
                                         drawText(label, color = Ink.White.copy(alpha = 0.8f), topLeft = Offset(fw - pad - label.size.width, pad))
@@ -273,7 +271,7 @@ fun FolderCard(
                     }
                 },
             )
-            // Front panel: frosted glass of the cover, rim-lit, with the title.
+            // Front panel: grey frosted glass with the cover's light and shade in it, rim-lit, with the title.
             Box(
                 kept
                     .align(Alignment.BottomCenter)
@@ -286,7 +284,7 @@ fun FolderCard(
                     }
                     .drawWithCache {
                         val frontPath = outlinePath(FolderFrontShape, size, layoutDirection, this)
-                        val shade = Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.38f), Color.Black.copy(alpha = 0.62f)))
+                        val glass = Brush.verticalGradient(listOf(FolderFrontTop, FolderFrontFoot))
                         val rim = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.5f), Color.White.copy(alpha = 0.08f)))
                         val sheen = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.10f), Color.Transparent), endY = size.height * 0.3f)
                         // The rim as it showed inside the panel's edge: half a point of light.
@@ -294,9 +292,8 @@ fun FolderCard(
                         // The frost overscans the panel by a third, so its soft edges never show.
                         val over = Rect0(size).inflate(0.35f)
                         onDrawBehind {
-                            drawPath(frontPath, Ink.Charcoal)
-                            softPaint?.draw(this, frontPath, over, softShown(), Mono)
-                            drawPath(frontPath, shade)
+                            drawPath(frontPath, glass)
+                            softPaint?.draw(this, frontPath, over, softShown() * FrostStrength, Mono)
                             drawPath(frontPath, rim, style = stroke)
                             // the light the glass catches along its top
                             drawPath(frontPath, sheen)
@@ -341,6 +338,15 @@ fun FolderCard(
 
 private val WordsInset = 12.dp
 
+/** The folder's greys: the same for every folder, whatever is in it. */
+private val FolderBackTop = Color(0xFF3A3A3D)
+private val FolderBackFoot = Color(0xFF2A2A2C)
+private val FolderFrontTop = Color(0xFF58585C)
+private val FolderFrontFoot = Color(0xFF3B3B3E)
+
+/** How much of the cover's light and shade shows in the frost. */
+private const val FrostStrength = 0.4f
+
 /**
  * One measurer for every folder, remembering what it has set: a folder coming back into view, or
  * flying off to its page, doesn't set the little labels on its songs again.
@@ -368,7 +374,7 @@ private fun wordsArrive(t: Float): Float = ((t - 0.2f) / 0.45f).coerceIn(0f, 1f)
 private fun FolderWords(title: String, detail: String?, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.End) {
         Txt(title, Type.TitleSmall, maxLines = 2, align = TextAlign.End)
-        if (detail != null) Txt(detail, Type.Label, color = Ink.Grey, maxLines = 1, upper = true)
+        if (detail != null) Txt(detail, Type.Label, color = Color.White.copy(alpha = 0.72f), maxLines = 1, upper = true)
     }
 }
 
@@ -381,7 +387,7 @@ private class Rect0(val left: Float, val top: Float, val right: Float, val botto
     fun inflate(fraction: Float) = Rect0(left - width * fraction / 2f, top - height * fraction / 2f, right + width * fraction / 2f, bottom + height * fraction / 2f)
 }
 
-/** Grey with a little contrast: the files' black and white. */
+/** Grey with a little contrast: what keeps a cover's colours out of the frost. */
 private val Mono = ColorFilter.colorMatrix(
     ColorMatrix(
         floatArrayOf(

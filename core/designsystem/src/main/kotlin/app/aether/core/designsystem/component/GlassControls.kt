@@ -16,6 +16,20 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import app.aether.core.designsystem.theme.Motion
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -67,11 +81,11 @@ fun GlassIconButton(
 
 /** A plain mark with a generous touch target and no glass: for secondary actions. */
 @Composable
-fun IconAction(glyph: Glyph, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, active: Boolean = true, size: Dp = 22.dp) {
+fun IconAction(glyph: Glyph, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, active: Boolean = true, size: Dp = 22.dp, tint: Color? = null) {
     Box(
         modifier.size(48.dp).semantics { contentDescription = label; role = Role.Button }.clip(Corners.Pill).quietClick(onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(glyph, size = size, color = if (active) Ink.White else Ink.Dim) }
+    ) { Icon(glyph, size = size, color = tint ?: if (active) Ink.White else Ink.Dim) }
 }
 
 /** A capsule of glass with words, for permissions and confirmations; [lit] for the one to take. */
@@ -139,3 +153,42 @@ fun SearchField(
         }
     }
 }
+
+/**
+ * A switch, as iOS has them, in black and white: on, a white track with a black knob; off, a dark
+ * track with a white one. The knob springs across, and spreads under the finger.
+ */
+@Composable
+fun PillToggle(on: Boolean, onToggle: () -> Unit, label: String, modifier: Modifier = Modifier) {
+    val haptics = LocalHaptics.current
+    val touch = remember { MutableInteractionSource() }
+    val pressed by touch.collectIsPressedAsState()
+    val across by animateFloatAsState(if (on) 1f else 0f, Motion.fluid(0.34f, 0.8f), label = "toggle")
+    val spread by animateFloatAsState(if (pressed) 1f else 0f, Motion.fluid(0.26f, 1f), label = "toggle press")
+    Canvas(
+        modifier
+            .size(ToggleWidth, ToggleHeight)
+            .semantics {
+                role = Role.Switch
+                contentDescription = label
+                stateDescription = if (on) "On" else "Off"
+            }
+            .clickable(interactionSource = touch, indication = null) { haptics.select(); onToggle() },
+    ) {
+        val inset = 2.dp.toPx()
+        val tall = size.height - inset * 2
+        val wide = tall + 6.dp.toPx() * spread
+        val tone = across.coerceIn(0f, 1f)
+        drawRoundRect(lerp(ToggleOff, Ink.White, tone), cornerRadius = CornerRadius(size.height / 2f))
+        drawRoundRect(
+            lerp(Ink.White, Ink.Black, tone),
+            topLeft = Offset(inset + (size.width - inset * 2 - wide) * across, inset),
+            size = Size(wide, tall),
+            cornerRadius = CornerRadius(tall / 2f),
+        )
+    }
+}
+
+private val ToggleWidth = 51.dp
+private val ToggleHeight = 31.dp
+private val ToggleOff = Color(0xFF39393D)

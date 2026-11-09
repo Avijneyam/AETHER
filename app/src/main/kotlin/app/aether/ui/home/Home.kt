@@ -51,6 +51,7 @@ import app.aether.core.designsystem.glass.LocalReduceMotion
 import app.aether.core.designsystem.theme.Ink
 import app.aether.core.designsystem.theme.Space
 import app.aether.core.designsystem.theme.Type
+import app.aether.core.model.songCount
 import app.aether.core.model.Artwork
 import app.aether.core.model.Feed
 import app.aether.core.model.FeedFilter
@@ -156,6 +157,8 @@ fun HomeScreen() {
             // Only the masthead can be above it: once it's scrolled off the top, it rests.
             if (filters.isNotEmpty()) Filters(filters, filterTitle, onScreen = { list.firstVisibleItemIndex <= 1 }) { t -> filterTitle = if (filterTitle == t) null else t }
         }
+        // Up where it's seen, and whatever the network does: this is the music that needs none.
+        item(key = "phone") { if (filterTitle == null) app.aether.ui.library.OnThisPhoneShelf() }
         when (load) {
             Load.Loading -> item(key = "loading") { Loading(Modifier.padding(top = 40.dp)) }
             is Load.Failed -> item(key = "failed") { Notice(load.title, load.body, action = "Try again", onAction = retry) }
@@ -176,7 +179,7 @@ fun HomeScreen() {
                         ) {
                             items(playlists, key = { it.id }) { p ->
                                 FolderLink(
-                                    FolderPreview("folder:local:${p.id}", p.title, "${p.count} songs", p.preview.firstOrNull()?.artwork ?: Artwork.None, p.preview.map { FolderFile(it.title, it.artwork) }),
+                                    FolderPreview("folder:local:${p.id}", p.title, songCount(p.count), p.preview.firstOrNull()?.artwork ?: Artwork.None, p.preview.map { FolderFile(it.title, it.artwork) }),
                                     Route.LocalPlaylist(p.id),
                                 )
                             }

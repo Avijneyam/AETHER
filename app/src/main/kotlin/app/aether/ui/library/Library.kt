@@ -57,6 +57,7 @@ import app.aether.core.designsystem.component.Txt
 import app.aether.core.designsystem.component.quietClick
 import app.aether.core.designsystem.theme.Ink
 import app.aether.core.designsystem.theme.Type
+import app.aether.core.model.songCount
 import app.aether.core.model.Artwork
 import app.aether.core.model.Track
 import app.aether.ui.LocalActions
@@ -80,18 +81,10 @@ import app.aether.ui.detail.SleeveLabel
 import app.aether.ui.detail.sleeveTracks
 import app.aether.ui.FolderLink
 import app.aether.player.Downloads
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.produceState
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
 import app.aether.ui.FolderPreview
 import app.aether.ui.pageLanded
 
-private enum class Shelf(val label: String) { Playlists("Playlists"), Songs("Songs"), Kept("Kept"), Phone("On this phone"), Albums("Albums"), Artists("Artists"), History("History") }
+private enum class Shelf(val label: String) { Playlists("Playlists"), Kept("Kept"), Phone("On this phone"), Songs("Songs"), Albums("Albums"), Artists("Artists"), History("History") }
 
 /** The listener's own archive. */
 @Composable
@@ -108,15 +101,8 @@ fun LibraryScreen() {
     val artists by container.library.artists.collectAsStateWithLifecycle(emptyList())
     val history by container.library.history(200).collectAsStateWithLifecycle(emptyList())
     val kept by container.downloads.entries.collectAsStateWithLifecycle()
-    // The phone's own music: read only with the listener's permission, asked when they open the shelf.
-    val context = LocalContext.current
-    val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
-    var allowed by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        allowed = granted
-        container.settings.markAsked(permission)
-    }
-    val phone by produceState(emptyList<Track>(), allowed, shelf) { if (allowed && shelf == Shelf.Phone) value = container.local.songs() }
+    // The phone's own music: read only with the listener's permission.
+    val music = rememberPhoneMusic()
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), state = rememberPageListState(), contentPadding = PaddingValues(bottom = 0.dp)) {
@@ -139,7 +125,7 @@ fun LibraryScreen() {
                         add {
                             FolderCard(
                                 title = "Liked songs",
-                                detail = "${liked.size} songs",
+                                detail = songCount(liked.size),
                                 artwork = liked.firstOrNull()?.artwork ?: Artwork.None,
                                 files = liked.take(3).map { FolderFile(it.title, it.artwork) },
                                 onOpen = { actions.nav.open(Route.Liked) },
@@ -148,7 +134,7 @@ fun LibraryScreen() {
                         playlists.forEach { p ->
                             add {
                                 FolderLink(
-                                    FolderPreview("folder:local:${p.id}", p.title, "${p.count} songs", p.preview.firstOrNull()?.artwork ?: Artwork.None, p.preview.map { FolderFile(it.title, it.artwork) }),
+                                    FolderPreview("folder:local:${p.id}", p.title, songCount(p.count), p.preview.firstOrNull()?.artwork ?: Artwork.None, p.preview.map { FolderFile(it.title, it.artwork) }),
                                     Route.LocalPlaylist(p.id),
                                 )
                             }
@@ -190,21 +176,7 @@ fun LibraryScreen() {
                         }
                     }
                 }
-                Shelf.Phone -> when {
-                    !allowed -> item {
-                        Notice(
-                            "Your own music",
-                            if (container.settings.asked(permission)) "Allow AETHER to read your audio in the phone's settings, under Apps." else "AETHER can play the songs on this phone straight from their files, at their own quality. It needs permission to read your audio; nothing leaves the phone.",
-                            action = if (container.settings.asked(permission)) null else "Allow",
-                            onAction = { ask.launch(permission) },
-                        )
-                    }
-                    phone.isEmpty() -> item { Notice("No music on this phone", "Songs saved to the phone show here.") }
-                    else -> {
-                        item { PlayRow(phone) }
-                        item { TrackList(phone, playContext = phone) }
-                    }
-                }
+                Shelf.Phone -> phoneShelf(music)
                 Shelf.Albums -> {
                     if (albums.isEmpty()) item { Notice("No albums yet", "Save an album with the heart on its page.") }
                     else items(albums.chunked(2)) { pair ->
@@ -267,7 +239,7 @@ private fun NewTile(onClick: () -> Unit) {
 }
 
 @Composable
-private fun PlayRow(tracks: List<Track>) {
+internal fun PlayRow(tracks: List<Track>) {
     val actions = LocalActions.current
     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         GlassCircle(Glyph.Shuffle, "Shuffle", { actions.shuffle(tracks) }, size = 52.dp)
@@ -286,7 +258,7 @@ fun LikedScreen() {
     LazyColumn(Modifier.fillMaxSize(), state = rememberPageListState(), contentPadding = PaddingValues(bottom = 0.dp)) {
         item { BackLine() }
         item { Txt("Liked songs", Type.Monument, align = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) }
-        item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Strapline("${liked.size} songs") } }
+        item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Strapline(songCount(liked.size)) } }
         if (liked.isEmpty()) item { Notice("No liked songs yet", "Tap the heart on Now Playing to keep a song here.") }
         else {
             item { PlayRow(liked) }
@@ -332,16 +304,17 @@ fun LocalPlaylistScreen(id: Long) {
             item(key = "head") {
                 // As it was when touched: the folder never reloads into something else on its page.
                 val files = preview?.files ?: tracks.take(3).map { FolderFile(it.title, it.artwork) }
-                SleeveHead(p.title, "${entries.size} songs", preview?.artwork ?: tracks.firstOrNull()?.artwork ?: Artwork.None, files) {
+                SleeveHead(p.title, songCount(entries.size), preview?.artwork ?: tracks.firstOrNull()?.artwork ?: Artwork.None, files) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         if (tracks.isNotEmpty()) {
-                            SleeveActions(tracks, saved = null, onSave = null)
+                            SleeveActions(tracks, saved = null, onSave = null, follows = app.aether.KeepSync.local(id))
                             Spacer(Modifier.height(16.dp))
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             if (tracks.isNotEmpty()) GlassPill(if (editing) "Done" else "Edit", icon = if (editing) Glyph.Check else Glyph.Edit, onClick = { editing = !editing }, lit = editing, small = true)
                             GlassPill("Rename", onClick = { renaming = true }, small = true)
                             GlassPill("Delete", icon = Glyph.Trash, onClick = {
+                                container.keepSync.stop(app.aether.KeepSync.local(id))
                                 scope.launch { container.library.deletePlaylist(id) }
                                 actions.nav.back()
                             }, small = true)

@@ -74,7 +74,12 @@ import app.aether.core.designsystem.art.Pictures
 import app.aether.core.designsystem.component.DragSheet
 import app.aether.core.designsystem.component.DragState
 import app.aether.core.designsystem.component.FolderPose
+import app.aether.core.designsystem.art.pullRipple
 import app.aether.core.designsystem.glass.BackdropVeil
+import app.aether.ui.player.KeepFlight
+import app.aether.ui.player.KeepOverlay
+import app.aether.ui.profile.CardExport
+import app.aether.ui.profile.MetalCardOverlay
 import app.aether.core.designsystem.component.Glyph
 import app.aether.core.designsystem.component.Icon
 import app.aether.core.designsystem.component.LightCross
@@ -149,6 +154,8 @@ class Actions(
     val player: DragState,
     private val menu: DragState,
     val flight: FolderFlight,
+    val keep: KeepFlight,
+    val card: CardExport,
     val openMenu: (Track) -> Unit,
 ) {
     val playback = container.playback
@@ -237,7 +244,11 @@ fun Shell() {
     // glass refracts that cover; asked for anywhere else, it opens over the room.
     var menuInPlayer by remember { mutableStateOf(false) }
     val flightScope = rememberCoroutineScope()
-    val actions = remember { Actions(container, nav, player, menu, FolderFlight(flightScope)) { t -> menuFor = t; menuInPlayer = player.value > 0.5f; menu.show() } }
+    val context = LocalContext.current
+    val haptics = LocalHaptics.current
+    val keep = remember { KeepFlight(context, flightScope, container.downloads, haptics) }
+    val card = remember { CardExport(flightScope) }
+    val actions = remember { Actions(container, nav, player, menu, FolderFlight(flightScope), keep, card) { t -> menuFor = t; menuInPlayer = player.value > 0.5f; menu.show() } }
     val playback by container.playback.state.collectAsStateWithLifecycle()
     val reduce = LocalReduceMotion.current
     val density = LocalDensity.current
@@ -279,7 +290,8 @@ fun Shell() {
                 }
             }
             GlassHost(
-                Modifier.fillMaxSize(),
+                // A song going into the phone moves the whole screen; the rest of the time this is nothing.
+                Modifier.fillMaxSize().pullRipple(keep.ripple),
                 // The whole plane, its black ground included, isn't drawn under a Now Playing that covers it,
                 // or under the blur of it, which is all that can be seen of it once that's fully in.
                 hideContent = { covered() || veiled() },
@@ -337,6 +349,8 @@ fun Shell() {
                     if (!menuInPlayer || !player.visible) menuSheet()
                 },
             )
+            MetalCardOverlay(card, onSaved = { keep.note(it) })
+            KeepOverlay(keep)
         }
     }
 }
@@ -608,10 +622,11 @@ private fun Tab.glyph(): Glyph = when (this) {
     Tab.Listen -> Glyph.Listen
     Tab.Discover -> Glyph.Discover
     Tab.Library -> Glyph.Library
+    Tab.Profile -> Glyph.Profile
 }
 
 /**
- * The three rooms in one capsule of liquid glass. Folded, it's a circle holding the room you're in;
+ * The rooms in one capsule of liquid glass. Folded, it's a circle holding the room you're in;
  * touching the circle unfolds the dock.
  */
 @Composable

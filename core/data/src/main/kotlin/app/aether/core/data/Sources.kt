@@ -93,9 +93,22 @@ class Settings(context: Context) {
     private val _simpleGlass = flag(SIMPLE_GLASS, true)
     val simpleGlass: StateFlow<Boolean> = _simpleGlass.asStateFlow()
 
-    private val _artwork = MutableStateFlow(prefs.getInt(ARTWORK, 0))
+    // The cycle used to open on black and white, with the original second; the rest kept their places.
+    private val _artwork = MutableStateFlow(prefs.getInt(ARTWORK_CYCLE, prefs.getInt(ARTWORK, 0).let { if (it <= 1) 0 else it }))
     /** The treatment Now Playing opens with (an index into the cycle). */
     val artwork: StateFlow<Int> = _artwork.asStateFlow()
+
+    private val _lyricsStyle = MutableStateFlow(prefs.getInt(LYRICS_STYLE, 0))
+    /** How timed lyrics are drawn: 0 as constellations, 1 as one continuous line. */
+    val lyricsStyle: StateFlow<Int> = _lyricsStyle.asStateFlow()
+
+    private val _keptCollections = MutableStateFlow(prefs.getStringSet(KEPT_COLLECTIONS, emptySet()).orEmpty().toSet())
+    /** The playlists and albums whose new songs are kept as well. */
+    val keptCollections: StateFlow<Set<String>> = _keptCollections.asStateFlow()
+
+    private val _profileName = MutableStateFlow(prefs.getString(PROFILE_NAME, null))
+    /** The name the listener gave their Profile, if they did. */
+    val profileName: StateFlow<String?> = _profileName.asStateFlow()
 
     private val _chartsCountry = MutableStateFlow(prefs.getString(CHARTS_COUNTRY, null))
     val chartsCountry: StateFlow<String?> = _chartsCountry.asStateFlow()
@@ -111,7 +124,18 @@ class Settings(context: Context) {
     fun setSimpleGlass(on: Boolean) = set(SIMPLE_GLASS, on, _simpleGlass)
     fun setTimedLyrics(on: Boolean) = set(TIMED_LYRICS, on, _timedLyrics)
     fun setArtistArt(on: Boolean) = set(ARTIST_ART, on, _artistArt)
-    fun setArtwork(index: Int) { prefs.edit().putInt(ARTWORK, index).apply(); _artwork.value = index }
+    fun setArtwork(index: Int) { prefs.edit().putInt(ARTWORK_CYCLE, index).apply(); _artwork.value = index }
+    fun setLyricsStyle(index: Int) { prefs.edit().putInt(LYRICS_STYLE, index).apply(); _lyricsStyle.value = index }
+    fun setCollectionKept(key: String, on: Boolean) {
+        val next = if (on) _keptCollections.value + key else _keptCollections.value - key
+        prefs.edit().putStringSet(KEPT_COLLECTIONS, next).apply()
+        _keptCollections.value = next
+    }
+    fun setProfileName(name: String) {
+        val trimmed = name.trim().ifEmpty { null }
+        prefs.edit().putString(PROFILE_NAME, trimmed).apply()
+        _profileName.value = trimmed
+    }
     fun setChartsCountry(code: String?) { prefs.edit().putString(CHARTS_COUNTRY, code).apply(); _chartsCountry.value = code }
 
     private fun set(key: String, value: Boolean, state: MutableStateFlow<Boolean>) {
@@ -129,6 +153,10 @@ class Settings(context: Context) {
         const val ARTIST_ART = "artist_art"
         const val ADDONS = "addons"
         const val ARTWORK = "artwork_treatment"
+        const val ARTWORK_CYCLE = "artwork_cycle"
+        const val LYRICS_STYLE = "lyrics_style"
+        const val PROFILE_NAME = "profile_name"
+        const val KEPT_COLLECTIONS = "kept_collections"
         const val CHARTS_COUNTRY = "charts_country"
     }
 }

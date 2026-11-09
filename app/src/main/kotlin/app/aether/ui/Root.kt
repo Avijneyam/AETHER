@@ -406,5 +406,8 @@ private fun Warmup() {
     }, overlay = {
         FolderCard("", null, art, listOf(FolderFile("", art)), onOpen = {}, width = 120.dp, opened = true)
         Box(Modifier.size(120.dp, 44.dp).liquidGlass(Corners.Pill))
+        // The wave a song going into the phone sends across the screen, so that its first frame isn't a long one.
+        val wave = remember { app.aether.core.designsystem.art.PullRipple().also { it.warm() } }
+        Box(Modifier.size(120.dp, 44.dp).then(with(app.aether.core.designsystem.art.PullRippleWarm) { of(wave) }))
     })
 }

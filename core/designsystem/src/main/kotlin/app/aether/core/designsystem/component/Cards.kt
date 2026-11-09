@@ -70,7 +70,7 @@ fun TrackRow(
     modifier: Modifier = Modifier,
     index: Int? = null,
     playing: Boolean = false,
-    treatment: ArtTreatment = ArtTreatment.Print,
+    treatment: ArtTreatment = ArtTreatment.Cover,
     onLongClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
@@ -90,8 +90,7 @@ fun TrackRow(
         if (index != null) {
             Txt(index.toString().padStart(2, '0'), Type.Meta, color = if (playing) Ink.White else Ink.Dim, modifier = Modifier.width(34.dp))
         } else {
-            // Colour belongs to the song that's playing, wherever it's listed.
-            TreatedArtwork(track.artwork, if (playing) ArtTreatment.Original else treatment, Modifier.size(46.dp).clip(Corners.Small), sizeHintPx = 160)
+            TreatedArtwork(track.artwork, treatment, Modifier.size(46.dp).clip(Corners.Small), sizeHintPx = 160)
             Spacer(Modifier.width(14.dp))
         }
         Column(Modifier.weight(1f)) {
@@ -110,7 +109,7 @@ fun TrackRow(
 
 /** A square cover with its title and line beneath, centred. */
 @Composable
-fun AlbumCard(album: Album, onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = 150.dp, treatment: ArtTreatment = ArtTreatment.Print) {
+fun AlbumCard(album: Album, onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = 150.dp, treatment: ArtTreatment = ArtTreatment.Cover) {
     CoverCard(album.title, album.subtitle ?: album.artists.joinToString { it.name }, album.artwork, onClick, modifier, width) {
         TreatedArtwork(album.artwork, treatment, it, sizeHintPx = 450)
     }
@@ -119,14 +118,14 @@ fun AlbumCard(album: Album, onClick: () -> Unit, modifier: Modifier = Modifier, 
 @Composable
 fun PlaylistCard(playlist: Playlist, onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = 150.dp) {
     CoverCard(playlist.title, playlist.subtitle ?: playlist.author, playlist.artwork, onClick, modifier, width) {
-        TreatedArtwork(playlist.artwork, ArtTreatment.Print, it, sizeHintPx = 450)
+        TreatedArtwork(playlist.artwork, ArtTreatment.Cover, it, sizeHintPx = 450)
     }
 }
 
 @Composable
 fun PodcastCard(podcast: Podcast, onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = 150.dp) {
     CoverCard(podcast.title, podcast.author, podcast.artwork, onClick, modifier, width) {
-        TreatedArtwork(podcast.artwork, ArtTreatment.Print, it, sizeHintPx = 450)
+        TreatedArtwork(podcast.artwork, ArtTreatment.Cover, it, sizeHintPx = 450)
     }
 }
 
@@ -155,7 +154,7 @@ fun TrackCard(track: Track, onClick: () -> Unit, modifier: Modifier = Modifier, 
     GlassCard(track.artwork, onClick, modifier.width(w)) {
         TreatedArtwork(
             track.artwork,
-            ArtTreatment.Print,
+            ArtTreatment.Cover,
             Modifier.fillMaxWidth().aspectRatio(if (wide) 16f / 9f else 1f).clip(Corners.Medium),
             sizeHintPx = 480,
         )

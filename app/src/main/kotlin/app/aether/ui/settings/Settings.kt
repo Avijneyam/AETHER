@@ -54,6 +54,10 @@ import app.aether.core.designsystem.component.quietClick
 import app.aether.core.designsystem.theme.Ink
 import app.aether.core.designsystem.theme.Space
 import app.aether.core.designsystem.theme.Type
+import app.aether.core.model.songCount
+import app.aether.core.model.songsIncluded
+import app.aether.ui.LocalActions
+import app.aether.ui.Route
 import app.aether.ui.common.LocalContainer
 import app.aether.ui.detail.BackLine
 import kotlinx.coroutines.delay
@@ -83,6 +87,11 @@ fun SettingsScreen() {
     val simpleGlass by settings.simpleGlass.collectAsStateWithLifecycle()
     val timedLyrics by settings.timedLyrics.collectAsStateWithLifecycle()
     val artistArt by settings.artistArt.collectAsStateWithLifecycle()
+    val lyricsStyle by settings.lyricsStyle.collectAsStateWithLifecycle()
+    val phoneFolders by container.local.folders.collectAsStateWithLifecycle()
+    val phoneChoice by container.local.selection.collectAsStateWithLifecycle()
+    val actions = LocalActions.current
+    LaunchedEffect(Unit) { if (container.local.hasPermission() && phoneFolders == null) container.local.refresh() }
     val session by container.account.cookies.collectAsStateWithLifecycle()
     val sources by container.sources.added.collectAsStateWithLifecycle()
     val addresses by container.settings.addons.collectAsStateWithLifecycle()
@@ -142,12 +151,27 @@ fun SettingsScreen() {
             }
         }
         item {
-            Section("III", "Sound") {
+            Section("III", "Music on this phone") {
+                Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Words(
+                        "Music folders",
+                        phoneFolders?.let { f -> songsIncluded(f, phoneChoice).let { n -> "${songCount(n)} from the folders you've chosen. Voice notes and other apps' audio are left out unless you add them." } }
+                            ?: "Choose which of the phone's folders AETHER reads. They show on Listen, under On this phone.",
+                        Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(18.dp))
+                    GlassPill("Choose", small = true, trailingIcon = Glyph.Forward, onClick = { actions.nav.open(Route.MusicFolders()) })
+                }
+                Rule()
+            }
+        }
+        item {
+            Section("IV", "Sound") {
                 Toggle("Data saver", "Lower-bitrate streams for metered networks. Off plays the best the source has.", efficient) { settings.setEfficient(!efficient) }
             }
         }
         item {
-            Section("IV", "Feel") {
+            Section("V", "Feel") {
                 Toggle("Haptics", "A light touch you can feel on the actions that matter.", haptics) { settings.setHaptics(!haptics) }
                 Toggle("Reduce motion", "No stretch, ripples or drifting. Also follows your phone's setting.", reduce) { settings.setReduceMotion(!reduce) }
                 Choice(
@@ -160,43 +184,50 @@ fun SettingsScreen() {
             }
         }
         item {
-            Section("V", "Now Playing") {
+            Section("VI", "Now Playing") {
                 Toggle(
                     "Timed lyrics",
                     "Words in time with the song, from LRCLIB, an open library of lyrics. Asking it sends a song's title, artist and length; nothing else. Off, the music service's own words are shown.",
                     timedLyrics,
                 ) { settings.setTimedLyrics(!timedLyrics) }
                 Choice(
+                    title = "How lyrics are drawn",
+                    detail = "Constellations sets each word as a star in a night sky. Line writes the song by hand, as one unbroken line.",
+                    options = listOf("Constellations", "Line"),
+                    selected = lyricsStyle.coerceIn(0, 1),
+                    onSelect = { settings.setLyricsStyle(it) },
+                )
+                Choice(
                     title = "The cover",
                     detail = "How the print is shown. Touch the cover on Now Playing to change it at any time.",
-                    options = listOf("Mono", "Original", "Halftone", "ASCII", "Dither"),
+                    options = listOf("Original", "Mono", "Halftone", "ASCII", "Dither"),
                     selected = artwork.mod(ArtTreatment.Cycle.size),
                     onSelect = { settings.setArtwork(it) },
                 )
             }
         }
         item {
-            Section("VI", "Artists") {
+            Section("VII", "Artists and albums") {
                 Toggle(
-                    "Artist art",
-                    "A portrait, the artist's own lettering and a short film at the head of their page, from Apple Music's public pages, for the artists who have them. Asking sends the artist's name; nothing else. Off, or on the data saver for the film, the page uses what the source gives.",
+                    "Artist and album art",
+                    "A portrait, the artist's own lettering and a short film at the head of their page, and an album's moving cover at the head of its, from Apple Music's public pages, for those who have them. It also asks what kind of music your most played artists make, for your Profile. Asking sends the artist's name and the album's title; nothing else. Off, or on the data saver for the films, a page uses what the source gives.",
                     artistArt,
                 ) { settings.setArtistArt(!artistArt) }
             }
         }
         item {
-            Section("VII", "Your data") {
+            Section("VIII", "Your data") {
                 Erase("Listening history", "Everything you've played, gone from this phone.") { scope.launch { container.library.clearHistory() } }
                 Erase("Recent searches", "What you've looked for on Discover.") { scope.launch { container.library.clearSearches() } }
             }
         }
         item {
-            Section("VIII", "Privacy") {
-                Paragraph("AETHER has no analytics and no accounts. Your likes, playlists and history stay on this phone. The only requests it makes are the ones that load pages and play music, and, if you leave them on, the ones for timed lyrics and artist art.")
+            Section("IX", "Privacy") {
+                Paragraph("AETHER has no analytics and no accounts. Your likes, playlists and history stay on this phone. The only requests it makes are the ones that load pages and play music, and, if you leave them on, the ones for timed lyrics and for artist and album art. The music on the phone is read on the phone.")
             }
         }
         item {
-            Section("IX", "About") {
+            Section("X", "About") {
                 Spacer(Modifier.height(16.dp))
                 Txt("AETHER 0.1", Type.TitleSmall)
                 Paragraph(

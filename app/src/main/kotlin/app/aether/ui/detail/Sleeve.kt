@@ -19,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -32,6 +34,7 @@ import app.aether.core.designsystem.component.GlassButton
 import app.aether.core.designsystem.component.GlassCircle
 import app.aether.core.designsystem.component.Glyph
 import app.aether.core.designsystem.component.Icon
+import app.aether.core.designsystem.component.IconAction
 import app.aether.core.designsystem.component.LocalHaptics
 import app.aether.core.designsystem.component.Txt
 import app.aether.core.designsystem.component.clock
@@ -40,6 +43,7 @@ import app.aether.core.designsystem.theme.Ink
 import app.aether.core.designsystem.theme.Sans
 import app.aether.core.designsystem.theme.Space
 import app.aether.core.designsystem.theme.Type
+import app.aether.core.model.songCount
 import app.aether.core.model.Artwork
 import app.aether.core.model.MediaId
 import app.aether.core.model.Track
@@ -61,8 +65,7 @@ import app.aether.ui.common.LocalContainer
 
 /*
  * A playlist's page as a record's sleeve: the folder that was touched flies up and stays open and
- * large at the head of the page; the tracklist is set as on the back of a sleeve, in sides; the
- * label's credit sits at the foot.
+ * large at the head of the page; the tracklist under it; the label's credit sits at the foot.
  */
 
 /** How wide a folder stands at the head of its page. */
@@ -91,62 +94,84 @@ fun SleeveHead(title: String, detail: String?, artwork: Artwork, files: List<Fol
     }
 }
 
-/** Shuffle, play, keep it in the library (when it can be), and keep its songs on the phone. */
+/**
+ * Shuffle, play, keep it in the library (when it can be), and keep its songs on the phone. A playlist
+ * or album says which one it is ([follows]): keeping it then keeps what's added to it later as well,
+ * and the same key stops that.
+ */
 @Composable
-fun SleeveActions(tracks: List<Track>, saved: Boolean?, onSave: (() -> Unit)?) {
+fun SleeveActions(tracks: List<Track>, saved: Boolean?, onSave: (() -> Unit)?, follows: String? = null) {
     val actions = LocalActions.current
     val container = LocalContainer.current
     val kept by container.downloads.entries.collectAsStateWithLifecycle()
     val allKept = tracks.isNotEmpty() && tracks.all { kept[it.id]?.status == Downloads.Status.Kept }
+    val following by container.settings.keptCollections.collectAsStateWithLifecycle()
+    val followed = follows != null && follows in following
+    val done = allKept || followed
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         GlassCircle(Glyph.Shuffle, "Shuffle", { actions.shuffle(tracks) }, size = 50.dp)
         GlassButton("Play", onClick = { actions.play(tracks, 0) })
         if (saved != null && onSave != null) GlassCircle(if (saved) Glyph.HeartFilled else Glyph.Heart, if (saved) "Saved" else "Save", onSave, size = 50.dp, lit = saved)
         else GlassCircle(Glyph.Plus, "Add to queue", { actions.playback.addToQueue(tracks) }, size = 50.dp)
-        GlassCircle(if (allKept) Glyph.Check else Glyph.Download, if (allKept) "Kept on this phone" else "Keep on this phone", { if (!allKept) container.downloads.keep(tracks) }, size = 50.dp, lit = allKept)
+        GlassCircle(
+            if (done) Glyph.Check else Glyph.Download,
+            when { followed -> "Keeping new songs. Stop"; allKept -> "Kept on this phone"; else -> "Keep on this phone" },
+            {
+                when {
+                    followed -> {
+                        container.keepSync.stop(follows!!)
+                        actions.keep.note("New songs won't be kept")
+                    }
+                    else -> {
+                        if (!allKept) container.downloads.keep(tracks)
+                        if (follows != null && tracks.isNotEmpty()) {
+                            container.keepSync.follow(follows, tracks)
+                            actions.keep.note("New songs will be kept on Wi-Fi")
+                        }
+                    }
+                }
+            },
+            size = 50.dp,
+            lit = done,
+        )
     }
 }
 
-private val SideStyle = TextStyle(fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 15.sp, lineHeight = 18.sp)
+private val CreditStyle = TextStyle(fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 17.sp, lineHeight = 21.sp)
 private val RowStyle = TextStyle(fontFamily = Sans, fontWeight = FontWeight.W500, fontSize = 13.5.sp, lineHeight = 18.sp)
 private val ByStyle = SpanStyle(fontFamily = Serif, fontWeight = FontWeight.W400, fontSize = 14.5.sp, color = Ink.Grey)
 
-/** How many songs to a side: two sides for a short list, as an LP has; sides of twelve for a long one. */
-private fun sideLength(count: Int) = if (count <= 24) ((count + 1) / 2).coerceAtLeast(1) else 12
+/** How far in a row's words and its line stand from the screen's edge. */
+private val RowEdge = Space.edge + 4.dp
 
-private fun sideLetter(side: Int): String {
-    val letters = ('A'..'Z').toList()
-    return if (side < letters.size) letters[side].toString() else letters[side / letters.size - 1].toString() + letters[side % letters.size]
-}
+/** How far the three dots' key reaches past the dots themselves: it's the dots that line up with the edge. */
+private val DotsReach = 16.dp
 
 /**
- * The tracklist, as on a sleeve: a head (Side, Length, Tracklist), then each song with its side's
- * letter on the first of the side, its length, a mark (pause on the one that's playing) and
- * "Artist – Title". Touch to play from there; hold for the song's menu.
+ * The tracklist: a head (Length, Tracklist), then each song with its length, a mark (pause on the one
+ * that's playing), its name and who it's by, and a line between one song and the next. Touch to play
+ * from there; hold, or touch the three dots, for the song's menu.
  */
 fun LazyListScope.sleeveTracks(tracks: List<Track>, playing: MediaId?, isPlaying: Boolean, keyPrefix: String, onPlay: (Int) -> Unit) {
     if (tracks.isEmpty()) return
     val lengths = tracks.any { it.durationMs != null }
     item(key = "$keyPrefix:head") { SleeveHeader(lengths) }
-    val side = sideLength(tracks.size)
     itemsIndexed(tracks, key = { i, t -> "$keyPrefix:$i:${t.id}" }) { i, t ->
         SleeveRow(
-            letter = if (i % side == 0) sideLetter(i / side) else null,
             track = t,
             playing = t.id == playing,
             isPlaying = isPlaying,
-            gapAbove = i % side == 0 && i > 0,
+            first = i == 0,
             lengths = lengths,
             onClick = { onPlay(i) },
         )
     }
 }
 
-/** The tracklist's head: Side, Length (when the source gives lengths), Tracklist. */
+/** The tracklist's head: Length (when the source gives lengths), Tracklist. */
 @Composable
 private fun SleeveHeader(lengths: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = Space.edge + 4.dp).padding(bottom = 4.dp)) {
-        Txt("Side", Type.Label, upper = true, modifier = Modifier.width(40.dp))
+    Row(Modifier.fillMaxWidth().padding(horizontal = RowEdge).padding(bottom = 4.dp)) {
         if (lengths) Txt("Length", Type.Label, color = Ink.Dim, upper = true, modifier = Modifier.width(78.dp))
         else Spacer(Modifier.width(22.dp))
         Txt("Tracklist", Type.Label, color = Ink.Dim, upper = true)
@@ -154,7 +179,7 @@ private fun SleeveHeader(lengths: Boolean) {
 }
 
 /**
- * A tracklist as on a sleeve, drawn whole: for a list that sits among a page's other things (an
+ * A tracklist drawn whole: for a list that sits among a page's other things (an
  * album's songs, an artist's best, a day of history). Touch to play from there; hold for the menu.
  */
 @Composable
@@ -164,16 +189,14 @@ fun SleeveList(tracks: List<Track>, playContext: List<Track> = tracks, alone: Bo
     val container = LocalContainer.current
     val actions = LocalActions.current
     val playback by container.playback.state.collectAsStateWithLifecycle()
-    val side = sideLength(tracks.size)
     Column(Modifier.fillMaxWidth()) {
         SleeveHeader(lengths)
         tracks.forEachIndexed { i, t ->
             SleeveRow(
-                letter = if (i % side == 0) sideLetter(i / side) else null,
                 track = t,
                 playing = t.id == playback.current?.id,
                 isPlaying = playback.isPlaying,
-                gapAbove = i % side == 0 && i > 0,
+                first = i == 0,
                 lengths = lengths,
                 artists = artists,
                 // Alone, a song brings its own radio: what follows it is what's like it, not its neighbours in the list.
@@ -185,23 +208,28 @@ fun SleeveList(tracks: List<Track>, playContext: List<Track> = tracks, alone: Bo
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SleeveRow(letter: String?, track: Track, playing: Boolean, isPlaying: Boolean, gapAbove: Boolean, lengths: Boolean, artists: Boolean = true, onClick: () -> Unit) {
+private fun SleeveRow(track: Track, playing: Boolean, isPlaying: Boolean, first: Boolean, lengths: Boolean, artists: Boolean = true, onClick: () -> Unit) {
     val haptics = LocalHaptics.current
     val actions = LocalActions.current
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = if (gapAbove) 18.dp else 0.dp)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = FingertipLight,
                 onLongClick = { haptics.strong(); actions.openMenu(track) },
                 onClick = { haptics.select(); onClick() },
             )
-            .padding(horizontal = Space.edge + 4.dp, vertical = 12.dp),
+            // Drawn with the row and not a piece of its own: a long list has one of these for every song.
+            .drawBehind {
+                if (!first) {
+                    val inset = RowEdge.toPx()
+                    drawLine(RowLine, Offset(inset, 0f), Offset(size.width - inset, 0f), strokeWidth = 0.5.dp.toPx())
+                }
+            }
+            .padding(start = RowEdge, end = RowEdge - DotsReach),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Txt(letter ?: "", SideStyle, modifier = Modifier.width(40.dp))
         if (lengths) Txt(track.durationMs?.let { clock(it) } ?: "", Type.Meta, color = Ink.Dim, maxLines = 1, modifier = Modifier.width(56.dp))
         Icon(if (playing && isPlaying) Glyph.Pause else Glyph.Play, size = 10.dp, color = if (playing) Ink.White else Ink.Grey)
         Spacer(Modifier.width(12.dp))
@@ -225,8 +253,12 @@ private fun SleeveRow(letter: String?, track: Track, playing: Boolean, isPlaying
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        IconAction(Glyph.More, "More", { actions.openMenu(track) }, size = 16.dp, tint = Ink.Grey)
     }
 }
+
+/** The line between two songs: a little more than a hairline, so it's still there on a dim screen. */
+private val RowLine = Ink.White.copy(alpha = 0.16f)
 
 /** The label's credit at the foot of the sleeve: the cover small, the name, who made it, and its count and length. */
 @Composable
@@ -238,12 +270,12 @@ fun SleeveLabel(artwork: Artwork, title: String, by: String?, tracks: List<Track
         else -> "${total / 60_000} min"
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = Space.edge + 4.dp).padding(top = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-        TreatedArtwork(artwork, ArtTreatment.Print, Modifier.size(64.dp).clip(Corners.Small), sizeHintPx = 200)
+        TreatedArtwork(artwork, ArtTreatment.Cover, Modifier.size(64.dp).clip(Corners.Small), sizeHintPx = 200)
         Spacer(Modifier.width(16.dp))
         Column {
-            Txt(title, SideStyle.copy(fontSize = 17.sp, lineHeight = 21.sp), maxLines = 2)
+            Txt(title, CreditStyle, maxLines = 2)
             if (!by.isNullOrBlank()) Txt(by, Type.Body, color = Ink.Grey, maxLines = 1)
-            Txt(listOfNotNull("${tracks.size} songs", length).joinToString("  ·  "), Type.Label, color = Ink.Dim, upper = true, maxLines = 1)
+            Txt(listOfNotNull(songCount(tracks.size), length).joinToString("  ·  "), Type.Label, color = Ink.Dim, upper = true, maxLines = 1)
         }
     }
 }

@@ -294,6 +294,7 @@ private fun Screen(route: Route) {
         Route.Home -> HomeScreen()
         Route.Search -> SearchScreen()
         Route.Library -> LibraryScreen()
+        Route.Profile -> app.aether.ui.profile.ProfileScreen()
         is Route.Album -> AlbumScreen(route.id)
         is Route.Artist -> ArtistScreen(route.id)
         is Route.Playlist -> PlaylistScreen(route.id)
@@ -304,6 +305,9 @@ private fun Screen(route: Route) {
         Route.Charts -> ChartsScreen()
         Route.Moods -> MoodsScreen()
         Route.Settings -> SettingsScreen()
+        is Route.OnThisPhone -> app.aether.ui.library.OnThisPhoneScreen(route.path)
+        Route.Kept -> app.aether.ui.library.KeptScreen()
+        is Route.MusicFolders -> app.aether.ui.settings.MusicFoldersScreen(route.path)
     }
 }
 

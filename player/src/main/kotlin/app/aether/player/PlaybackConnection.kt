@@ -43,6 +43,9 @@ class PlaybackConnection(private val context: Context, private val scope: Corout
      */
     val position: StateFlow<Long> = _position.asStateFlow()
 
+    /** Where the music is this instant, for what's drawn frame by frame ([position] moves four times a second). */
+    fun positionNow(): Long = controller?.currentPosition?.coerceAtLeast(0) ?: _position.value
+
     private var controller: MediaController? = null
     private val pending = ArrayList<(MediaController) -> Unit>()
     private var queue: List<Track> = emptyList()

@@ -84,8 +84,8 @@ none of it is ported. Lossless comes from where the listener has the right to it
 - No YouTube playback statistics or history pings. Sending plays to the listener's YouTube history
   is an explicit opt-in, and only when signed in.
 - LastWave's Last.fm scrobbling and Discord presence aren't taken unless asked for.
-- Artist art asks Apple only with the listener's setting on (on by default, Settings, "Artist art"),
-  sending the artist's name and nothing else, under AETHER's own client name. Its answers are kept on
+- Artist and album art ask Apple only with the listener's setting on (on by default, Settings, "Artist
+  and album art"), sending the artist's name and the album's title and nothing else, under AETHER's own client name. Its answers are kept on
   the phone. Timed lyrics are the same, with LRCLIB.
 
 ## 7. Licensing
@@ -149,8 +149,10 @@ decent-usb-audio-driver (MIT), libsoxr (LGPL-2.1, built as a shared library), Ne
   textures are freed. Motion runs on `Glide` (`theme/Fluid.kt`): a spring that advances by at most a
   thirtieth of a second per frame, so that a long frame holds it instead of skipping it, which is what
   lost a folder's flight the first few times. Measured: rooms and rapid switching about 6% janky frames.
-  **Not solved**: entering Discover has one frame of 50 to 350 ms of GPU work about 0.25 s into the
-  slide. The carousel makes it worse without being the whole cause; leaving Discover is clean.
+  Entering Discover had one frame of 50 to 350 ms of GPU work during the slide. Bisected on the phone,
+  it was the recent searches: page glass strokes and clips Apple's continuous outline (an arbitrary
+  path) six times a capsule, all first drawn together. Small page glass is now painted to images while
+  its room is measured out of sight (`PaintedGlass` in `LiquidGlass.kt`); the frame is about 40 ms.
 - **What's costly to draw** is kept as a small texture (`Modifier.retained`), best with no layer inside
   it: a folder's two flat paintings (tilted afterwards, as painting its outlines under a 3D tilt took a
   tenth of a second or more), the ribbon's capsules, a still print's shader. Sections and pages only
@@ -170,6 +172,28 @@ decent-usb-audio-driver (MIT), libsoxr (LGPL-2.1, built as a shared library), Ne
   film is video only and unencrypted (checked: no `EXT-X-KEY`), so it's within §5. This isn't an API
   Apple publishes: any surprise is "no art", and the source's picture is always there first. It's
   Apple's artwork, fetched at run time and shown as the listener's own client would, and not bundled.
+- **Album art** (same module): the iTunes search API finds an album of the same title by an artist of
+  the same name, and its public page's header gives, for some albums, the cover as a square looping
+  film (`videoArtwork.motionDetailSquare`; video only, no `EXT-X-KEY`, checked). Seen live on 2 albums
+  of 6 tried. Apple has no lettering for albums; the album proves who the artist is, so it brings the
+  artist's. Both films are shown in black and white.
+- **On this phone** (`:sources:local`, `core:model` `Folders.kt`, from PODIUM's `LocalMusicSource`, `FolderSelection`
+  and folder tree): the media store's songs with their folders, watched so changes show by themselves; the
+  listener's choice of folders (a folder follows the closest choice at or above it; app audio is out to begin
+  with) lives with the source. Kept songs are Media3 downloads.
+- **Kept playlists and albums** (`KeepSync`): keeping one remembers what it held; while the app runs, every six
+  hours (at once for the listener's own), on unmetered networks only, what's new is kept. Only additions: a song
+  taken off the phone isn't brought back, and nothing is deleted. Remembered in preferences, not the database.
+- **Profile** (`ui/profile`): computed on the phone from the listening history (`ProfileStats`, pure), shown from the
+  first song. Time is the lengths of songs played past their first half-minute, not a stopwatch. Genres are iTunes'
+  `primaryGenreName` for the most played artists, under the artist-art setting, and left out when unknown. Kinds of
+  song come from titles. The card is drawn once at a fixed density, so it's always 1080 by 1920, and captured from a
+  graphics layer; shared through a `FileProvider` copy, saved through the media store.
+- **Line lyrics** (`app/.../ui/lyrics/line`, from PODIUM's `feature/nowplaying/line`): the drawing is
+  prepared off the main thread for each song, and each frame only maps the position to a cursor. In
+  AETHER's white on black, not PODIUM's ivory and gold. Words in scripts the pen doesn't write are traced
+  whole from the system font (shaped, so Urdu and Hindi come out right), and Urdu runs from the right. Its swell with the bass isn't brought over: that
+  needs a meter (`AudioMeter`) in the audio's path, and nothing goes there for the sake of a drawing.
 - **Not yet**: Spotify import (planned through Spotify's own Web API with the listener's own app
   client id and PKCE, not `sp_dc` tokens), Premium-quality streams for signed-in listeners, and
   LastWave's chunked range requests.

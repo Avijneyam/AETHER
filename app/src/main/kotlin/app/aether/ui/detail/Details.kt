@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,7 +28,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
@@ -37,8 +35,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.aether.core.designsystem.art.ArtTreatment
-import app.aether.core.designsystem.art.TreatedArtwork
 import app.aether.core.designsystem.component.DragSheet
 import app.aether.core.designsystem.component.GlassButton
 import app.aether.core.designsystem.component.GlassCircle
@@ -46,7 +42,6 @@ import app.aether.core.designsystem.component.GlassPanel
 import app.aether.core.designsystem.component.GlassPill
 import app.aether.core.designsystem.component.Strapline
 import app.aether.core.designsystem.component.rememberDragState
-import app.aether.core.designsystem.theme.Corners
 import app.aether.core.designsystem.theme.Space
 import app.aether.core.designsystem.component.Glyph
 import app.aether.core.designsystem.component.IconAction
@@ -56,8 +51,8 @@ import app.aether.core.designsystem.component.Txt
 import app.aether.core.designsystem.component.quietClick
 import app.aether.core.designsystem.theme.Ink
 import app.aether.core.designsystem.theme.Type
+import app.aether.core.model.songCount
 import app.aether.core.model.AlbumPage
-import app.aether.core.model.Artwork
 import app.aether.core.model.Charts
 import app.aether.core.model.Destination
 import app.aether.core.model.Feed
@@ -89,37 +84,6 @@ fun BackLine() {
     Spacer(Modifier.fillMaxWidth().statusBarsPadding().height(64.dp))
 }
 
-/** A page's head, centred: the picture, the name large, the line beneath, then its actions. */
-@Composable
-private fun CollectionHead(
-    artwork: Artwork,
-    title: String,
-    line: String?,
-    details: String?,
-    onLine: (() -> Unit)?,
-    tracks: List<Track>,
-    saved: Boolean?,
-    onSave: (() -> Unit)?,
-) {
-    val actions = LocalActions.current
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        TreatedArtwork(artwork, ArtTreatment.Monochrome(), Modifier.width(264.dp).aspectRatio(1f).clip(Corners.Medium), sizeHintPx = 1080)
-        Spacer(Modifier.height(26.dp))
-        Txt(title, Type.name(title, Type.Headline), align = TextAlign.Center, maxLines = 3, modifier = Modifier.padding(horizontal = 28.dp))
-        if (line != null) {
-            Spacer(Modifier.height(8.dp))
-            Txt(line, Type.Body, color = Ink.Grey, align = TextAlign.Center, modifier = if (onLine != null) Modifier.quietClick(onLine) else Modifier)
-        }
-        if (!details.isNullOrBlank()) {
-            Spacer(Modifier.height(12.dp))
-            Strapline(details)
-        }
-        Spacer(Modifier.height(22.dp))
-        SleeveActions(tracks, saved, onSave)
-        Spacer(Modifier.height(26.dp))
-    }
-}
-
 @Composable
 fun AlbumScreen(id: MediaId) {
     val container = LocalContainer.current
@@ -129,23 +93,18 @@ fun AlbumScreen(id: MediaId) {
     val (load, retry) = rememberLoad("album:$id") { source.album(id) }
     val saved by container.library.isSaved(id).collectAsStateWithLifecycle(false)
     LazyColumn(Modifier.fillMaxSize(), state = rememberPageListState(), contentPadding = PaddingValues(bottom = 0.dp)) {
-        item { BackLine() }
         when (load) {
-            Load.Loading -> pageLoading()
-            is Load.Failed -> item { Notice(load.title, load.body, action = "Try again", onAction = retry) }
+            Load.Loading -> { item { BackLine() }; pageLoading() }
+            is Load.Failed -> { item { BackLine() }; item { Notice(load.title, load.body, action = "Try again", onAction = retry) } }
             is Load.Ready<AlbumPage> -> {
                 val page = load.value
-                item {
-                    CollectionHead(
-                        artwork = page.album.artwork,
-                        title = page.album.title,
-                        line = page.album.artists.joinToString(", ") { it.name }.ifEmpty { null },
-                        details = listOfNotNull(page.album.subtitle, page.details).joinToString("   "),
-                        onLine = page.album.artists.firstOrNull()?.id?.let { a -> { actions.nav.open(Route.Artist(a)) } },
-                        tracks = page.tracks,
-                        saved = saved,
-                        onSave = { scope.launch { container.library.save(page.album, !saved) } },
-                    )
+                item(key = "hero") {
+                    AlbumHero(page, onArtist = page.album.artists.firstOrNull()?.id?.let { a -> { actions.nav.open(Route.Artist(a)) } })
+                }
+                item(key = "actions") {
+                    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 34.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        SleeveActions(page.tracks, saved = saved, onSave = { scope.launch { container.library.save(page.album, !saved) } }, follows = app.aether.KeepSync.album(id))
+                    }
                 }
                 item { TrackList(page.tracks, numbered = true, artists = false) }
                 page.description?.let { d -> item { Description(d) } }
@@ -157,8 +116,8 @@ fun AlbumScreen(id: MediaId) {
 
 /**
  * A playlist, as a record's sleeve: the folder that was touched flies up and stays open at the head;
- * the tracklist is set in sides; the label's credit at the foot. Long playlists keep loading as the
- * list nears its end.
+ * the tracklist under it; the label's credit at the foot. Long playlists keep loading as the list
+ * nears its end.
  */
 @Composable
 fun PlaylistScreen(id: MediaId) {
@@ -194,8 +153,8 @@ fun PlaylistScreen(id: MediaId) {
                     // The folder stays as it was when touched, its pictures already in memory: it never
                     // reloads into something else once its list arrives.
                     val files = preview?.files ?: remember(p.tracks.firstOrNull()?.id) { all.take(3).map { FolderFile(it.title, it.artwork) } }
-                    SleeveHead(preview?.title ?: p.playlist.title, preview?.detail ?: p.playlist.author ?: "${all.size} songs", preview?.artwork ?: p.playlist.artwork, files) {
-                        SleeveActions(all, saved = saved, onSave = { scope.launch { container.library.save(p.playlist, !saved) } })
+                    SleeveHead(preview?.title ?: p.playlist.title, preview?.detail ?: p.playlist.author ?: songCount(all.size), preview?.artwork ?: p.playlist.artwork, files) {
+                        SleeveActions(all, saved = saved, onSave = { scope.launch { container.library.save(p.playlist, !saved) } }, follows = app.aether.KeepSync.playlist(id))
                     }
                 }
                 if (!landed) return@LazyColumn

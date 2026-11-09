@@ -17,10 +17,13 @@ when behaviour changes.
   interface; provider code lives in `sources:*`.
 - **The service's answers are untrusted input.** Parsers fail soft and never throw
   (`ytmusic/…/Json.kt`); never branch on display text where a page type or id says the same.
-- **Black and white.** `#000` background, white type, greys. The song that's playing brings the only
-  colour: its cover in Now Playing and the mini player, and its row in a list. Every other picture is
-  printed in black and white (`ArtTreatment.Print`). No Material components; glass only through
-  `core:designsystem` (`Modifier.liquidGlass`).
+- **Black and white, and the music's own colour.** `#000` background, white type, greys. Album and
+  song covers are in their own colour on cards, in lists and in Now Playing (`ArtTreatment.Cover`). The
+  head of an album's or artist's page, picture and film, is black and white, as is every other picture
+  (artists, moods, the masthead: `ArtTreatment.Print`).
+  What's made from a cover stays neutral: a card's frost is grey, a playlist folder is grey, and only
+  the songs' covers on it have colour. No Material components; glass only through `core:designsystem`
+  (`Modifier.liquidGlass`).
 - **One glass: the tab bar's.** Never change the tab bar's own glass (`GlassWeight.Control`,
   `TabBar`/`Rooms` in `Shell.kt`). Everything else is made from it: pills and keys are its dragged
   selector's clear lens (`GlassWeight.Key`), sheets the same glass with a deeper frost (`Pane`).
@@ -29,7 +32,7 @@ when behaviour changes.
 - **Type by role, as on Listen.** Pinyon Script for names of pages and the wordmark, and nothing else
   (a name all in capitals goes in the serif's capitals: `Type.name`); EB Garamond for section headings
   and for reading; Montserrat capitals for the names of things (tracks, settings, menu entries). No
-  other faces (JetBrains Mono only where characters are pictures). An artist's own lettering, where
+  other faces (JetBrains Mono only where characters are pictures; the Line lyrics are a drawing, not a face). An artist's own lettering, where
   Apple Music has it, stands in for their name, in white.
 - **Motion is springs.** Apple's response and damping (`theme/Fluid.kt`, `Motion.fluid`), never a
   timed tween for anything that moves; interruptions keep their velocity.

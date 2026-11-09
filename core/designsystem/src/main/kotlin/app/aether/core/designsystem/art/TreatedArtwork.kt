@@ -65,14 +65,17 @@ sealed interface ArtTreatment {
     data class Dither(val dotDp: Float = 1.6f, val contrast: Float = 1.1f) : ArtTreatment
 
     companion object {
+        /** An album's or a song's picture on a card, in a list or playing: in its own colour. */
+        val Cover: ArtTreatment = Original
+
         /**
-         * Every picture in AETHER that isn't the song on: black and white, with a little contrast. No
-         * grain to compute, so no shader, however large. Colour belongs to the song that's playing.
+         * Every other picture in AETHER (an artist, a mood, a page's head): black and white, with a little contrast.
+         * No grain to compute, so no shader, however large.
          */
         val Print: ArtTreatment = Monochrome(grain = 0f)
 
-        /** The cycle Now Playing offers. */
-        val Cycle: List<ArtTreatment> = listOf(Monochrome(), Original, Halftone(), Ascii(), Dither())
+        /** The cycle Now Playing offers, opening on the cover as it is. */
+        val Cycle: List<ArtTreatment> = listOf(Original, Monochrome(), Halftone(), Ascii(), Dither())
     }
 }
 

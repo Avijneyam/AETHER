@@ -118,4 +118,32 @@ interface ArtistArtProvider {
 
     /** The art for the artist [id] named [name]; [titles] are their songs and releases, the proof it's really them. */
     suspend fun find(id: String, name: String, titles: Collection<String>): ArtistArt?
+
+    /** What kind of music the artist [name] makes, if anyone says. */
+    suspend fun genreOf(name: String): String? = null
+}
+
+/** Who's signed in to a source. */
+data class ListenerAccount(val name: String, val handle: String?, val photo: Artwork)
+
+/**
+ * What an album's page can show beyond its source's cover. Decoration, as [ArtistArt] is: any of it
+ * may be missing, and the page is whole without it.
+ */
+data class AlbumArt(
+    /** The cover's short looping film, square, video only and unencrypted (an HLS playlist); most albums have none. */
+    val film: String? = null,
+    /** Who made it, as they're lettered (see [ArtistArt.logo]): albums have no lettering of their own. */
+    val logo: String? = null,
+    /** The lettering's width over its height. */
+    val logoAspect: Float = 1f,
+)
+
+/** Where [AlbumArt] comes from. Never throws: having nothing to show is an answer. */
+interface AlbumArtProvider {
+    /** What's already known of the album [id], without asking anyone. */
+    fun cachedAlbum(id: String): AlbumArt?
+
+    /** The art for the album [id] called [title] by [artist], whose own id here is [artistId]. */
+    suspend fun findAlbum(id: String, title: String, artist: String, artistId: String?): AlbumArt?
 }

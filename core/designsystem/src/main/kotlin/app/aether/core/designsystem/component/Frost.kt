@@ -17,6 +17,8 @@ import app.aether.core.model.Artwork
  * sits on the page with nothing beneath it but black, so its glass frosts its own picture instead:
  * the cover far out of focus ([SoftArt], blurred once and cached), overscanned so no edge shows,
  * under the room's darkness so the words on it read. Without a picture it's the darkness alone.
+ * Grey whatever the cover: blurred and darkened, a cover's colours only go to mud, and the cover is
+ * right there beside it in colour.
  */
 @Composable
 fun Frost(artwork: Artwork, modifier: Modifier = Modifier) {

@@ -368,12 +368,12 @@ private fun DriftingCovers(covers: List<Artwork>, away: () -> Float, modifier: M
         ) {
             items(Int.MAX_VALUE / 2) { i ->
                 val art = covers[i % covers.size]
-                TreatedArtwork(art, ArtTreatment.Print, Modifier.width(150.dp).aspectRatio(1f).clip(RoundedCornerShape(3.dp)), sizeHintPx = 300)
+                TreatedArtwork(art, ArtTreatment.Cover, Modifier.width(150.dp).aspectRatio(1f).clip(RoundedCornerShape(3.dp)), sizeHintPx = 300)
             }
         }
         // The covers are dimmed here too, by the same black, and not by a layer of their own at 55%: a
         // whole carousel's worth less to draw on every step of its drift, for the same picture.
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black, 0.3f to Color.Black.copy(alpha = 0.64f), 0.75f to Color.Black.copy(alpha = 0.725f), 1f to Color.Black)))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black, 0.3f to Color.Black.copy(alpha = 0.34f), 0.72f to Color.Black.copy(alpha = 0.42f), 1f to Color.Black)))
     }
 }
 
@@ -430,7 +430,7 @@ private fun EntityLine(entity: MediaEntity, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().quietClick(onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         TreatedArtwork(
             entity.artwork,
-            ArtTreatment.Print,
+            if (entity is Artist) ArtTreatment.Print else ArtTreatment.Cover,
             Modifier.width(46.dp).aspectRatio(1f).clip(if (round) RoundedCornerShape(50) else RoundedCornerShape(3.dp)),
             sizeHintPx = 160,
         )

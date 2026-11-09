@@ -74,10 +74,10 @@ import app.aether.ui.pageLanded
 import app.aether.ui.placedWhile
 
 /** A little taller than it's wide: a portrait fills it without being cropped into. */
-private const val HeroAspect = 0.94f
+internal const val HeroAspect = 0.94f
 
 /** Black and white, with a little contrast about the middle: the film as the page's pictures are printed. */
-private val FilmPrint = ArtTreatment.Monochrome(contrast = 1.2f, grain = 0.6f)
+internal val FilmPrint = ArtTreatment.Monochrome(contrast = 1.2f, grain = 0.6f)
 
 /**
  * The head of an artist's page. The source's picture is there first, always, on any connection. If
@@ -153,11 +153,15 @@ fun ArtistHero(page: ArtistPage) {
         }
         // Started once the page has arrived, so that making a player never touches its slide.
         if (film != null && landed) {
-            ArtistFilm(
+            HeroFilm(
                 url = film,
                 playing = !elsewhere,
                 onFirstFrame = { filmFramed = true },
-                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = filmUp.value },
+                // A square film in a box a little taller than wide: as wide as it needs to keep its shape.
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    scaleX = 1f / HeroAspect
+                    alpha = filmUp.value
+                },
             )
         }
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.5f), 0.35f to Color.Transparent, 1f to Color.Black)))
@@ -204,18 +208,18 @@ private val BannerTop = 64.dp
 private val LogoTallest = 108.dp
 
 private const val PortraitPx = 1400
-private const val LogoPx = 1000
-private val Rising = Motion.fluid(0.7f, 1f, 0.002f)
+internal const val LogoPx = 1000
+internal val Rising = Motion.fluid(0.7f, 1f, 0.002f)
 
 /**
- * The artist's short film, looping and silent, in black and white. It never touches the music: it
+ * A page head's short film, looping and silent, in black and white. It never touches the music: it
  * has no sound, asks for no audio focus, and is limited to the screen's width (less on a metered
  * connection). What's been fetched is kept, so it starts at once the next time. It rests when it's
  * out of sight or the app is, and is let go when the page is.
  */
 @OptIn(UnstableApi::class)
 @Composable
-private fun ArtistFilm(url: String, playing: Boolean, onFirstFrame: () -> Unit, modifier: Modifier) {
+internal fun HeroFilm(url: String, playing: Boolean, onFirstFrame: () -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val player = remember(url) {

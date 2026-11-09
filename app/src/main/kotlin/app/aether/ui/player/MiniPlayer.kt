@@ -42,7 +42,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * The song that's playing, wherever you are: a capsule of glass above the rooms. Tap or lift it to
- * open Now Playing; a hairline of light along its foot is where the song has got to.
+ * open Now Playing (its play and next keys only do what they say); a hairline of light along its
+ * foot is where the song has got to.
  */
 @Composable
 fun MiniPlayer(state: PlaybackState, onOpen: () -> Unit, modifier: Modifier = Modifier) {
@@ -56,7 +57,7 @@ fun MiniPlayer(state: PlaybackState, onOpen: () -> Unit, modifier: Modifier = Mo
             .height(64.dp)
             .semantics { contentDescription = "Now playing: ${track.title}, ${track.artistLine}. Open" }
             .liquidGlass(Corners.Pill, GlassWeight.Control, liquid)
-            .liquidTouch(liquid, LocalReduceMotion.current) { onOpen() }
+            .liquidTouch(liquid, LocalReduceMotion.current, childrenFirst = true) { onOpen() }
             .pointerInput(Unit) { detectVerticalDragGestures { _, dy -> if (dy < -12) onOpen() } },
     ) {
         Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp).align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {

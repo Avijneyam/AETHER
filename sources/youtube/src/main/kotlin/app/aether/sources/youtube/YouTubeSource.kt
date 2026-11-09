@@ -67,6 +67,9 @@ class YouTubeSource(
 
     override suspend fun artist(id: MediaId): Outcome<ArtistPage> = yt.artist(id.key).toOutcome { it.toArtistPage(id.key) }
 
+    override suspend fun account(): Outcome<app.aether.core.model.ListenerAccount> =
+        yt.account().toOutcome { app.aether.core.model.ListenerAccount(it.name, it.handle, it.photo.toArtwork()) }
+
     override suspend fun playlist(id: MediaId): Outcome<PlaylistPage> = yt.playlist(id.key).toOutcome { it.toPlaylistPage(id.key) }
 
     override suspend fun tracksMore(token: PageToken): Outcome<Page<Track>> =

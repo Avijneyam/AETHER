@@ -22,6 +22,7 @@ sealed interface Route {
     data object Home : Route { override val key = "home" }
     data object Search : Route { override val key = "search" }
     data object Library : Route { override val key = "library" }
+    data object Profile : Route { override val key = "profile" }
     data class Album(val id: MediaId) : Route { override val key = "album:$id" }
     data class Artist(val id: MediaId) : Route { override val key = "artist:$id" }
     data class Playlist(val id: MediaId) : Route { override val key = "playlist:$id" }
@@ -32,13 +33,21 @@ sealed interface Route {
     data object Charts : Route { override val key = "charts" }
     data object Moods : Route { override val key = "moods" }
     data object Settings : Route { override val key = "settings" }
+
+    /** Offline music as a playlist; with a [path], one of the phone's folders inside it. */
+    data class OnThisPhone(val path: String = "") : Route { override val key = "phone:$path" }
+    data object Kept : Route { override val key = "kept" }
+
+    /** Choosing the phone's music folders, a level at a time. */
+    data class MusicFolders(val path: String = "") : Route { override val key = "music-folders:$path" }
 }
 
-/** Three rooms, few enough to hold in one hand. */
+/** Four rooms, few enough to hold in one hand. */
 enum class Tab(val label: String, val root: Route) {
     Listen("Listen", Route.Home),
     Discover("Discover", Route.Search),
     Library("Library", Route.Library),
+    Profile("Profile", Route.Profile),
 }
 
 /** Where a page is in its life on a stack. */

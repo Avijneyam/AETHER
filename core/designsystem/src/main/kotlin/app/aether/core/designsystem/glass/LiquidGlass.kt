@@ -22,6 +22,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.node.requireLayoutDirection
+import androidx.compose.ui.node.requireDensity
+import androidx.compose.ui.node.LayoutAwareModifierNode
+import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -226,12 +235,14 @@ fun rememberLiquidState(): LiquidState {
 
 /**
  * Feeds a finger to [state]: down, drag (with its velocity) and release. [onTap] fires for a touch
- * that didn't travel; a drag that left the surface is not a tap.
+ * that didn't travel; a drag that left the surface is not a tap. With [childrenFirst], neither is a
+ * touch that something on the glass took for itself (a key on a pill), though the glass still answers it.
  */
-fun Modifier.liquidTouch(state: LiquidState, reduceMotion: Boolean = false, onTap: (() -> Unit)? = null): Modifier =
+fun Modifier.liquidTouch(state: LiquidState, reduceMotion: Boolean = false, childrenFirst: Boolean = false, onTap: (() -> Unit)? = null): Modifier =
     pointerInput(state, onTap) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            var taken = down.isConsumed
             val w = max(1f, size.width.toFloat())
             val h = max(1f, size.height.toFloat())
             state.down(Offset(down.position.x / w, down.position.y / h))
@@ -242,7 +253,10 @@ fun Modifier.liquidTouch(state: LiquidState, reduceMotion: Boolean = false, onTa
             while (true) {
                 val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) break
+                if (!change.pressed) {
+                    taken = taken || change.isConsumed
+                    break
+                }
                 travelled += change.positionChange().getDistance()
                 tracker.addPosition(change.uptimeMillis, change.position)
                 val p = change.position
@@ -252,7 +266,7 @@ fun Modifier.liquidTouch(state: LiquidState, reduceMotion: Boolean = false, onTa
                 state.drag(Offset(v.x, v.y), reduceMotion)
             }
             state.up(reduceMotion)
-            if (inside && travelled < viewConfiguration.touchSlop) onTap?.invoke()
+            if (inside && travelled < viewConfiguration.touchSlop && !(childrenFirst && taken)) onTap?.invoke()
         }
     }
 
@@ -451,20 +465,82 @@ private class GlassSurface(val shape: Shape, val surface: Color, val state: Liqu
     override fun update(node: GlassSurfaceNode) {
         node.shape = shape; node.surface = surface; node.state = state; node.ripple = ripple
         node.path = null
+        node.painted = null
         node.invalidateDraw()
     }
     override fun equals(other: Any?) = other is GlassSurface && other.shape == shape && other.surface == surface && other.state === state && other.ripple == ripple
     override fun hashCode() = ((shape.hashCode() * 31 + surface.hashCode()) * 31 + (state?.hashCode() ?: 0)) * 31 + ripple.hashCode()
 }
 
-private class GlassSurfaceNode(var shape: Shape, var surface: Color, var state: LiquidState?, var ripple: Boolean) : Modifier.Node(), DrawModifierNode {
+private class GlassSurfaceNode(var shape: Shape, var surface: Color, var state: LiquidState?, var ripple: Boolean) : Modifier.Node(), DrawModifierNode, LayoutAwareModifierNode {
     var path: Path? = null
+    var painted: PaintedGlass? = null
     private var pathSize = Size.Unspecified
 
+    // Measured while its room is still being got ready out of sight: painted then, not while it's arriving.
+    override fun onRemeasured(size: IntSize) {
+        if (paintable(size, requireDensity())) paint(size, requireDensity(), requireLayoutDirection())
+    }
+
+    private fun paintable(size: IntSize, density: Density) = size.width > 0 && size.height > 0 && size.height <= with(density) { PaintedTallest.toPx() }
+
+    private fun paint(size: IntSize, density: Density, direction: LayoutDirection): PaintedGlass {
+        painted?.takeIf { it.size == size }?.let { return it }
+        val whole = Size(size.width.toFloat(), size.height.toFloat())
+        val outline = Path().apply { addOutline(shape.createOutline(whole, direction, density)) }
+        fun picture(block: DrawScope.() -> Unit): ImageBitmap {
+            val image = ImageBitmap(size.width, size.height)
+            CanvasDrawScope().draw(density, direction, Canvas(image), whole, block)
+            return image
+        }
+        return PaintedGlass(
+            size,
+            outline,
+            under = picture { clipPath(outline) { drawGlassSurface(surface, null, ripple = false) } },
+            rim = picture { drawLensRim(outline, 1f) },
+        ).also { painted = it }
+    }
+
     override fun ContentDrawScope.draw() {
+        val pressed = (state?.press?.value ?: 0f)
+        val here = IntSize(size.width.toInt(), size.height.toInt())
+        if (paintable(here, this)) {
+            val glass = paint(here, this, layoutDirection)
+            drawImage(glass.under)
+            state?.let { s -> if (pressed > 0.01f || (ripple && s.ripple.value < 1f)) clipPath(glass.outline) { drawGlassTouch(surface, s, ripple) } }
+            drawContent()
+            drawImage(glass.rim, alpha = (0.85f + 0.15f * pressed).coerceAtMost(1f))
+            return
+        }
         val outline = path?.takeIf { pathSize == size } ?: Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@draw)) }.also { path = it; pathSize = size }
         clipPath(outline) { drawGlassSurface(surface, state, ripple) }
         drawContent()
-        drawLensRim(outline, (0.85f + 0.15f * (state?.press?.value ?: 0f)).coerceAtMost(1f))
+        drawLensRim(outline, (0.85f + 0.15f * pressed).coerceAtMost(1f))
+    }
+}
+
+/**
+ * A small piece of page glass painted once, as pictures. Its outline is Apple's continuous curve, an
+ * arbitrary path, stroked four times and clipped to twice; the first time a screen's worth of these
+ * was drawn, the GPU had to work out every one in a single frame (ten capsules made a frame of a
+ * quarter of a second, entering Discover). As pictures they cost a textured rectangle each.
+ */
+private class PaintedGlass(val size: IntSize, val outline: Path, val under: ImageBitmap, val rim: ImageBitmap)
+
+/** Taller than this it's a card, painted as it's drawn: there are many on a page, each a large picture. */
+private val PaintedTallest = 80.dp
+
+/** What the finger adds to glass that's already painted. */
+private fun DrawScope.drawGlassTouch(surface: Color, state: LiquidState, ripple: Boolean) {
+    val p = state.press.value
+    if (p > 0.01f) drawRect(surface.copy(alpha = 0.06f * p))
+    val c = Offset(state.touch.x * size.width, state.touch.y * size.height)
+    if (p > 0.01f) {
+        drawRect(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.16f * p), Color.Transparent), center = c, radius = max(size.width, size.height) * 0.55f))
+    }
+    val r = state.ripple.value
+    if (r < 1f && ripple) {
+        val reach = max(size.width, size.height) * (0.15f + 0.9f * r)
+        drawCircle(Color.White.copy(alpha = 0.10f * (1f - r)), radius = reach, center = c, style = Stroke(width = 1.5.dp.toPx() * (1f - r) + 0.5f))
     }
 }

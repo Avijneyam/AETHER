@@ -25,7 +25,7 @@ import app.aether.core.designsystem.theme.Ink
  * hairline marks, its Fill for play, pause, skip and a liked heart: one family, drawn by one hand);
  * the rooms' own marks on the tab bar (Listen, Discover, Library) and the gear stay AETHER's.
  */
-enum class Glyph { Play, Pause, Next, Previous, Shuffle, Repeat, RepeatOne, Heart, HeartFilled, Queue, Lyrics, More, Down, Back, Search, Close, Plus, Check, Download, Listen, Discover, Library, Gear, Forward, Edit, Trash }
+enum class Glyph { Play, Pause, Next, Previous, Shuffle, Repeat, RepeatOne, Heart, HeartFilled, Queue, Lyrics, More, Down, Back, Search, Close, Plus, Check, Download, Listen, Discover, Library, Profile, Gear, Forward, Edit, Trash }
 
 @Composable
 fun Icon(glyph: Glyph, modifier: Modifier = Modifier, size: Dp = 22.dp, color: Color = Ink.White, weight: Float = 1.4f) {
@@ -122,6 +122,11 @@ fun Icon(glyph: Glyph, modifier: Modifier = Modifier, size: Dp = 22.dp, color: C
                 rotate(-18f, p(17.5f, 20f)) {
                     drawRoundRect(color, p(15.8f, 4.5f), Size(3.4f * u, 15.5f * u), androidx.compose.ui.geometry.CornerRadius(1f * u))
                 }
+            }
+            Glyph.Profile -> {
+                // A listener: a head and shoulders.
+                drawCircle(color, 4.5f * u, p(12f, 8f))
+                drawPath(path { moveTo(4f * u, 20.6f * u); cubicTo(4.6f * u, 15.6f * u, 8f * u, 13.8f * u, 12f * u, 13.8f * u); cubicTo(16f * u, 13.8f * u, 19.4f * u, 15.6f * u, 20f * u, 20.6f * u); close() }, color)
             }
             Glyph.Gear -> {
                 for (k in 0 until 8) rotate(k * 45f, p(12f, 12f)) {

@@ -20,6 +20,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
+import app.aether.core.designsystem.glass.LocalReduceMotion
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aether.core.designsystem.art.ArtTreatment
@@ -39,11 +42,20 @@ import app.aether.core.model.Track
 import app.aether.ui.LocalActions
 import app.aether.ui.Route
 import app.aether.ui.common.LocalContainer
-import app.aether.ui.common.NameDialog
 import kotlinx.coroutines.launch
 import app.aether.player.Downloads
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import app.aether.core.designsystem.component.IconAction
 
 /** What can be done with a track: grouped glass rows, each with its flat mark. */
 @Composable
@@ -57,10 +69,17 @@ fun TrackMenu(track: Track, close: () -> Unit) {
     val keeping = kept[track.id]
     var choosing by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
+    val reduce = LocalReduceMotion.current
+    val thumb = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    // Keeping is sent down from the cover it's about: Now Playing's if that's open, or the one here.
+    fun keep() {
+        container.downloads.keep(listOf(track))
+        actions.keep.fly(track, actions.keep.boundsOf(if (actions.player.value > 0.5f) actions.keep.cover else thumb[0]), reduce)
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Space.edge, vertical = 14.dp)) {
         Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TreatedArtwork(track.artwork, ArtTreatment.Print, Modifier.size(58.dp).clip(Corners.Small), sizeHintPx = 200)
+            TreatedArtwork(track.artwork, ArtTreatment.Cover, Modifier.size(58.dp).clip(Corners.Small).onPlaced { thumb[0] = it }, sizeHintPx = 200)
             Spacer(Modifier.width(14.dp))
             Column {
                 Txt(track.title, Type.TitleSmall, maxLines = 2)
@@ -76,11 +95,12 @@ fun TrackMenu(track: Track, close: () -> Unit) {
                 scope.launch { container.library.setLiked(track, !liked) }
                 close()
             }
-            run {
+            // A song on the phone is on the phone already.
+            if (track.id.source != container.local.id) {
                 when (keeping?.status) {
-                    null -> Entry(Glyph.Download, "Keep on this phone") { container.downloads.keep(listOf(track)); close() }
+                    null -> Entry(Glyph.Download, "Keep on this phone") { keep(); close() }
                     Downloads.Status.Kept -> Entry(Glyph.Check, "Kept on this phone  ·  Remove") { container.downloads.forget(track.id); close() }
-                    Downloads.Status.Failed -> Entry(Glyph.Download, "Couldn't keep it  ·  Try again") { container.downloads.forget(track.id); container.downloads.keep(listOf(track)); close() }
+                    Downloads.Status.Failed -> Entry(Glyph.Download, "Couldn't keep it  ·  Try again") { container.downloads.forget(track.id); keep(); close() }
                     else -> Entry(Glyph.Download, "Keeping  ${(keeping.progress * 100).toInt()}%  ·  Stop") { container.downloads.forget(track.id); close() }
                 }
             }
@@ -90,20 +110,51 @@ fun TrackMenu(track: Track, close: () -> Unit) {
             track.artists.firstOrNull { it.id != null }?.let { a -> Entry(Glyph.Listen, "Go to ${a.name}") { actions.go(Route.Artist(a.id!!)) } }
         } else {
             Head("Add to playlist")
-            Entry(Glyph.Plus, "New playlist") { naming = true }
+            if (naming) NewPlaylistLine(track.title) { name ->
+                scope.launch { container.library.createPlaylist(name, tracks = listOf(track)) }
+                actions.keep.note("Added to $name")
+                close()
+            } else Entry(Glyph.Plus, "New playlist") { naming = true }
             playlists.forEach { p ->
                 Entry(Glyph.Library, p.title) {
                     scope.launch { container.library.add(p.id, listOf(track)) }
+                    actions.keep.note("Added to ${p.title}")
                     close()
                 }
             }
         }
     }
-    if (naming) NameDialog("New playlist", track.title, onDone = { name ->
-        naming = false
-        scope.launch { container.library.createPlaylist(name, tracks = listOf(track)) }
-        close()
-    }, onDismiss = { naming = false })
+}
+
+/**
+ * "New playlist", become the place its name is written: the words go in on this very line, where the
+ * label was, with the keyboard up below it. Left empty, the playlist takes the song's name.
+ */
+@Composable
+private fun NewPlaylistLine(fallback: String, onDone: (String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    val finish = { onDone(name.trim().ifEmpty { fallback }) }
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Glyph.Plus, size = 17.dp, color = Ink.White)
+        Spacer(Modifier.width(20.dp))
+        Box(Modifier.weight(1f).padding(vertical = 17.dp)) {
+            if (name.isEmpty()) Txt("New playlist", Type.TitleSmall, color = Ink.Dim, maxLines = 1)
+            BasicTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                textStyle = Type.TitleSmall.copy(color = Ink.White),
+                cursorBrush = SolidColor(Ink.White),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { finish() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            )
+        }
+        IconAction(Glyph.Check, "Make the playlist", { finish() }, size = 17.dp)
+    }
+    Box(Modifier.fillMaxWidth().height(0.5.dp).background(Ink.White.copy(alpha = 0.6f)))
 }
 
 /** A group's name in small spaced capitals, over a hairline: no boxes, the type carries it. */

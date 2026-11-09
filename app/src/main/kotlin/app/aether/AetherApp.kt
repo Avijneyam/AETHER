@@ -45,8 +45,9 @@ import app.aether.sources.local.LocalSource
 import app.aether.core.data.Account
 import app.aether.ytmusic.WebSession
 import app.aether.sources.addon.AddonSource
+import app.aether.core.model.AlbumArtProvider
 import app.aether.core.model.ArtistArtProvider
-import app.aether.sources.apple.AppleArtistArt
+import app.aether.sources.apple.AppleArt
 import app.aether.sources.apple.ArtHttp
 import kotlinx.coroutines.launch
 
@@ -79,6 +80,9 @@ class Container(app: Application) {
     /** Songs kept on the phone to play offline. */
     val downloads = Downloads(app, scope).also { it.start() }
 
+    /** Kept playlists and albums go on being kept: what's added to them later comes down on Wi-Fi. */
+    val keepSync = KeepSync(app, scope, sources, library, downloads, settings).also { it.start() }
+
     init {
         // The listener's own sources, reconnected by their addresses.
         scope.launch {
@@ -88,8 +92,7 @@ class Container(app: Application) {
         }
     }
 
-    /** An artist's portrait, lettering and film, kept on the phone; asked only with the listener's consent (the page checks). */
-    val artistArt: ArtistArtProvider = AppleArtistArt(
+    private val appleArt = AppleArt(
         ArtHttp { url ->
             withContext(Dispatchers.IO) {
                 http.newCall(Request.Builder().url(url).header("User-Agent", "AETHER/0.1 (Android music player)").build()).execute().use {
@@ -99,6 +102,12 @@ class Container(app: Application) {
         },
         File(app.cacheDir, "artist-art"),
     )
+
+    /** An artist's portrait, lettering and film, kept on the phone; asked only with the listener's consent (the page checks). */
+    val artistArt: ArtistArtProvider = appleArt
+
+    /** An album's film and the lettering of who made it, on the same terms. */
+    val albumArt: AlbumArtProvider = appleArt
 
     /** Timed lyrics from LRCLIB (PODIUM's lyrics layer), cached on the phone, asked only with the listener's consent. */
     val lyrics = LyricsRepository(
@@ -141,7 +150,10 @@ class AetherApp : Application(), PlaybackEnvironment, SingletonImageLoader.Facto
     // --- Artwork ---
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)
-        .components { add(OkHttpNetworkFetcherFactory(callFactory = { container.http })) }
+        .components {
+            add(OkHttpNetworkFetcherFactory(callFactory = { container.http }))
+            add(AudioArtFetcher.Factory(context))
+        }
         .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.33).build() }
         .diskCache { DiskCache.Builder().directory(cacheDir.resolve("artwork").toOkioPath()).maxSizeBytes(256L * 1024 * 1024).build() }
         .crossfade(320)
