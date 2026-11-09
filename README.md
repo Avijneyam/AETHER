@@ -6,22 +6,37 @@ Built around the sound. Unlike anything you've used.
 </p>
 
 <p align="center">
-  <img src="docs/images/listen.jpg" width="24%" alt="Listen, with a statue in halftone">
-  <img src="docs/images/morph.jpg" width="24%" alt="The halftone dots of one statue reassembling into another">
-  <img src="docs/images/now-playing.jpg" width="24%" alt="Now Playing, the album's film fading in an arc round the dial">
-  <img src="docs/images/equaliser.jpg" width="24%" alt="The equaliser, showing the measured correction for AirPods Max">
+  <a href="https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v1.apk"><img alt="Download the APK" src="https://img.shields.io/badge/Download-APK-ffffff?style=for-the-badge&labelColor=000000" /></a>
+  <a href="https://github.com/GHOSTxASR/AETHER/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/GHOSTxASR/AETHER?style=for-the-badge&labelColor=000000&color=ffffff" /></a>
+  <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/License-GPL--3.0-ffffff?style=for-the-badge&labelColor=000000" /></a>
+  <img alt="Android 10 or later" src="https://img.shields.io/badge/Android-10%2B-ffffff?style=for-the-badge&labelColor=000000" />
 </p>
 
 <p align="center">
+  <img src="docs/images/listen.jpg" width="24%" alt="The homepage, with a statue of Hera in halftone">
+  <img src="docs/images/morph.jpg" width="24%" alt="The halftone dots of one statue reassembling into another">
+  <img src="docs/images/now-playing.jpg" width="24%" alt="Now Playing, the album's film fading in an arc round the dial">
+  <img src="docs/images/artist.jpg" width="24%" alt="An artist's page, with their own lettering">
+</p>
+
+<p align="center">
+  <img src="docs/images/home-folders.jpg" width="24%" alt="The homepage's playlists as glass folders">
+  <img src="docs/images/equaliser.jpg" width="24%" alt="The equaliser, showing the measured correction for AirPods Max">
   <img src="docs/images/card-profile.jpg" width="24%" alt="A profile card in brushed silver">
   <img src="docs/images/card-song.jpg" width="24%" alt="A song card in black metal">
-  <img src="docs/images/library.jpg" width="24%" alt="The library, with playlists as glass folders">
-  <img src="docs/images/profile.jpg" width="24%" alt="A day of listening drawn as a dial">
 </p>
 
 AETHER is made the way a fine watch is made: every part considered, nothing there for show. Pure black. One glass. Three typefaces. The only colour on the screen comes from the music you're playing.
 
 It plays all of YouTube Music and your own files through an audio path that reports exactly what it measured, in an interface no other music app looks or moves like.
+
+## Download
+
+1. Download **[AETHER v1.apk](https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v1.apk)** from the latest release.
+2. Open it on your phone. Android asks once to allow installs from your browser or file manager.
+3. Open AETHER and press play.
+
+Needs Android 10 or later. Every release is signed with the same key, so new versions install over old ones and keep your library.
 
 ## Zero nonsense
 
@@ -73,7 +88,7 @@ Quality is measured, never claimed. Added sources play open media only: no conte
 
 ## Building
 
-Version 0.1.0, in final polish. Runs on Android 10 or later, in portrait. You need JDK 17 or later and the Android SDK with API 37, with `local.properties` pointing at the SDK.
+Runs on Android 10 or later, in portrait. To build it you need JDK 17 or later and the Android SDK with API 37, with `local.properties` pointing at the SDK.
 
 ```sh
 ./gradlew :app:installDebug                                          # build and install on a phone
@@ -82,7 +97,7 @@ Version 0.1.0, in final polish. Runs on Android 10 or later, in portrait. You ne
 ./gradlew :app:assembleRelease                                       # release APK
 ```
 
-Release builds are currently signed with the debug key, so add your own signing config before distributing one. AGSL shaders need Android 13, and the dot morph and bit-perfect output need 14. Older phones fall back quietly.
+A release build is signed with the key named in `keystore.properties`, which stays out of git; without one the APK comes out unsigned. Publishing is written up in [`docs/releasing.md`](docs/releasing.md). AGSL shaders need Android 13, and the dot morph and bit-perfect output need 14. Older phones fall back quietly.
 
 | Module | What it holds |
 |---|---|
@@ -95,7 +110,7 @@ Release builds are currently signed with the debug key, so add your own signing 
 | `ytmusic` | The YouTube Music client and its fail-soft parser |
 | `sources:*` | YouTube, the phone, addons, and Apple's public art |
 
-Design and engineering notes are in [`docs/product.md`](docs/product.md), [`docs/architecture.md`](docs/architecture.md) and [`docs/ytmusic-verification.md`](docs/ytmusic-verification.md).
+What changed and when is in [`CHANGELOG.md`](CHANGELOG.md). Design and engineering notes are in [`docs/product.md`](docs/product.md), [`docs/architecture.md`](docs/architecture.md) and [`docs/ytmusic-verification.md`](docs/ytmusic-verification.md).
 
 ## Credits
 

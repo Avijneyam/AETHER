@@ -1,10 +1,23 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Release signing: the key and its passwords live outside git, in keystore.properties (ignored) or in
+// AETHER_KEYSTORE_* environment variables. Without either, the release APK is built unsigned.
+val signing = Properties().apply {
+    rootProject.file("keystore.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+fun secret(key: String, env: String): String? = signing.getProperty(key) ?: System.getenv(env)
+val releaseStore = secret("storeFile", "AETHER_KEYSTORE_FILE")
+
+// A release build installed beside the phone's own: -Paether.applicationIdSuffix=.rc. Testing one
+// then needs no uninstall, which would wipe the listener's data.
+val sideBySide = providers.gradleProperty("aether.applicationIdSuffix").orNull
 
 android {
     namespace = "app.aether"
@@ -13,8 +26,19 @@ android {
         applicationId = "app.aether"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // major * 1,000,000 + minor * 1,000 + patch, so it only ever rises.
+        versionCode = 1_000_000
+        versionName = "1.0.0"
+    }
+    signingConfigs {
+        if (releaseStore != null) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = secret("storePassword", "AETHER_KEYSTORE_PASSWORD")
+                keyAlias = secret("keyAlias", "AETHER_KEY_ALIAS")
+                keyPassword = secret("keyPassword", "AETHER_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         debug {
@@ -24,13 +48,13 @@ android {
             isDebuggable = providers.gradleProperty("aether.debuggable").orNull == "true"
         }
         release {
-            // Shrunk and optimised by R8, with the libraries' baseline profiles installed on the phone
-            // (profileinstaller), so the first time anything runs it's already compiled. Signed with
-            // this machine's debug key for installing directly; a store key stays out of the repo.
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            // Not shrunk: what's released is the same code that's tested on the phone every day, and
+            // nothing can go missing that only reflection asks for. The libraries' baseline profiles
+            // are still installed (profileinstaller), so the first run is already compiled.
+            sideBySide?.let { applicationIdSuffix = it }
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
