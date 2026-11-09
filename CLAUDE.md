@@ -47,7 +47,8 @@ when behaviour changes.
 - Windows 11, 7.7 GB RAM: keep the Gradle heap caps in `gradle.properties`.
 - JDK 22 on PATH (targets 17), Android SDK at `D:\Android`, Gradle from PODIUM's cache.
 - Test phone over adb: A059, Android 37, 1080×2392 at 420 dpi, portrait only.
-- `./gradlew :ytmusic:test` (fixtures), `./gradlew :ytmusic:liveCheck` (live service),
+- `./gradlew :ytmusic:test` (fixtures), `./gradlew :core:model:test :player:testDebugUnitTest` (the equaliser's sums and
+  audio), `./gradlew :ytmusic:liveCheck` (live service),
   `./gradlew :app:installDebug` (the phone).
 - Debug builds only: `adb shell am start -n app.aether.debug/app.aether.MainActivity --es aether.preview welcome`
   shows the welcome again without touching the listener's settings.

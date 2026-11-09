@@ -14,7 +14,10 @@ import app.aether.core.model.PlayRecorder
 import app.aether.core.model.QueueStore
 import app.aether.core.model.Stream
 import app.aether.player.PlaybackConnection
+import app.aether.core.data.EqualiserStore
+import app.aether.core.model.EqProfile
 import app.aether.player.PlaybackEnvironment
+import kotlinx.coroutines.flow.StateFlow
 import app.aether.sources.youtube.YouTubeSource
 import app.aether.sources.youtube.YouTubeStreamResolver
 import app.aether.ui.common.Catalog
@@ -59,6 +62,7 @@ class Container(app: Application) {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
     val settings = Settings(app)
+    val equaliser = EqualiserStore(app, scope)
     val database = AetherDatabase.open(app)
     val library = Library(database)
     val queueStore = DatabaseQueueStore(database)
@@ -139,6 +143,7 @@ class AetherApp : Application(), PlaybackEnvironment, SingletonImageLoader.Facto
     override val queueStore: QueueStore get() = container.queueStore
     override val recorder: PlayRecorder get() = container.library
     override val http: OkHttpClient get() = container.http
+    override val equaliser: StateFlow<EqProfile?> get() = container.equaliser.shaping
 
     override fun sessionActivity(): PendingIntent? = PendingIntent.getActivity(
         this,

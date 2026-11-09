@@ -33,6 +33,7 @@ sealed interface Route {
     data object Charts : Route { override val key = "charts" }
     data object Moods : Route { override val key = "moods" }
     data object Settings : Route { override val key = "settings" }
+    data object Equaliser : Route { override val key = "equaliser" }
 
     /** Offline music as a playlist; with a [path], one of the phone's folders inside it. */
     data class OnThisPhone(val path: String = "") : Route { override val key = "phone:$path" }

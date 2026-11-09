@@ -305,6 +305,7 @@ private fun Screen(route: Route) {
         Route.Charts -> ChartsScreen()
         Route.Moods -> MoodsScreen()
         Route.Settings -> SettingsScreen()
+        Route.Equaliser -> app.aether.ui.settings.EqualiserScreen()
         is Route.OnThisPhone -> app.aether.ui.library.OnThisPhoneScreen(route.path)
         Route.Kept -> app.aether.ui.library.KeptScreen()
         is Route.MusicFolders -> app.aether.ui.settings.MusicFoldersScreen(route.path)

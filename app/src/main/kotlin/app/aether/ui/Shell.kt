@@ -1,5 +1,7 @@
 package app.aether.ui
 
+import app.aether.ui.player.KeepList
+import app.aether.core.designsystem.component.Pull
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -237,8 +239,10 @@ fun Shell() {
     val container = LocalContainer.current
     val arrival = LocalArrival.current
     val nav = remember { Navigator() }
-    val player = rememberDragState()
+    val player = rememberDragState(give = Pull.Give, flick = Pull.Flick)
     val menu = rememberDragState()
+    val keeps = rememberDragState()
+    var keepsInPlayer by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<Track?>(null) }
     // A menu asked for from Now Playing opens in Now Playing, over the cover it's about, and its
     // glass refracts that cover; asked for anywhere else, it opens over the room.
@@ -247,7 +251,11 @@ fun Shell() {
     val context = LocalContext.current
     val haptics = LocalHaptics.current
     val keep = remember { KeepFlight(context, flightScope, container.downloads, haptics) }
-    val card = remember { CardExport(flightScope) }
+    val card = remember { CardExport(flightScope, container.settings, container.library) }
+    keep.onOpenList = {
+        keepsInPlayer = player.value > 0.5f
+        keeps.show()
+    }
     val actions = remember { Actions(container, nav, player, menu, FolderFlight(flightScope), keep, card) { t -> menuFor = t; menuInPlayer = player.value > 0.5f; menu.show() } }
     val playback by container.playback.state.collectAsStateWithLifecycle()
     val reduce = LocalReduceMotion.current
@@ -259,8 +267,9 @@ fun Shell() {
     // Every new page starts with the dock open.
     LaunchedEffect(nav.current) { dock.unfold() }
 
-    BackHandler(enabled = menu.visible || player.visible || nav.canGoBack) {
+    BackHandler(enabled = keeps.visible || menu.visible || player.visible || nav.canGoBack) {
         when {
+            keeps.visible -> keeps.hide()
             menu.visible -> menu.hide()
             player.visible -> player.hide()
             else -> nav.back()
@@ -289,6 +298,9 @@ fun Shell() {
                     menuFor?.let { track -> TrackMenu(track, close = { menu.hide() }) }
                 }
             }
+            val keepsSheet: @Composable () -> Unit = {
+                DragSheet(keeps, height = 500.dp, onClosed = { keepsInPlayer = false }) { KeepList(close = { keeps.hide() }) }
+            }
             GlassHost(
                 // A song going into the phone moves the whole screen; the rest of the time this is nothing.
                 Modifier.fillMaxSize().pullRipple(keep.ripple),
@@ -298,7 +310,7 @@ fun Shell() {
                 content = {
                     // What moves by itself on a page rests while anything is over it: the blur under
                     // Now Playing and the frost under a sheet are made from a page that holds still.
-                    Pages(nav, actions.flight, dock.watcher, paused = { player.visible || menu.visible })
+                    Pages(nav, actions.flight, dock.watcher, paused = { player.visible || menu.visible || keeps.visible })
                 },
                 overlay = {
                     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -343,10 +355,11 @@ fun Shell() {
                                 }
                                 .dragsOpen(player),
                         ) {
-                            NowPlaying(player = player, onClose = { player.hide() }, menu = if (menuInPlayer) menuSheet else null)
+                            NowPlaying(player = player, onClose = { player.hide() }, menu = if (menuInPlayer || keepsInPlayer) ({ if (menuInPlayer) menuSheet(); if (keepsInPlayer) keepsSheet() }) else null)
                         }
                     }
                     if (!menuInPlayer || !player.visible) menuSheet()
+                    if (!keepsInPlayer || !player.visible) keepsSheet()
                 },
             )
             MetalCardOverlay(card, onSaved = { keep.note(it) })

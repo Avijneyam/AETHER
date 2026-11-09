@@ -212,14 +212,14 @@ internal const val LogoPx = 1000
 internal val Rising = Motion.fluid(0.7f, 1f, 0.002f)
 
 /**
- * A page head's short film, looping and silent, in black and white. It never touches the music: it
+ * A short film, looping and silent, in black and white unless told otherwise. It never touches the music: it
  * has no sound, asks for no audio focus, and is limited to the screen's width (less on a metered
  * connection). What's been fetched is kept, so it starts at once the next time. It rests when it's
  * out of sight or the app is, and is let go when the page is.
  */
 @OptIn(UnstableApi::class)
 @Composable
-internal fun HeroFilm(url: String, playing: Boolean, onFirstFrame: () -> Unit, modifier: Modifier) {
+internal fun HeroFilm(url: String, playing: Boolean, onFirstFrame: () -> Unit, modifier: Modifier, mono: Boolean = true, onVideoAspect: (Float) -> Unit = {}) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val player = remember(url) {
@@ -247,6 +247,9 @@ internal fun HeroFilm(url: String, playing: Boolean, onFirstFrame: () -> Unit, m
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() = onFirstFrame()
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) onVideoAspect(videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height)
+            }
         }
         player.addListener(listener)
         onDispose {
@@ -269,7 +272,7 @@ internal fun HeroFilm(url: String, playing: Boolean, onFirstFrame: () -> Unit, m
     AndroidView(
         factory = { c ->
             TextureView(c).also { view ->
-                view.setLayerPaint(Paint().apply { colorFilter = ColorMatrixColorFilter(filmMatrix()) })
+                if (mono) view.setLayerPaint(Paint().apply { colorFilter = ColorMatrixColorFilter(filmMatrix()) })
                 player.setVideoTextureView(view)
             }
         },

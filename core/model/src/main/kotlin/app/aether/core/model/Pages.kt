@@ -146,4 +146,10 @@ interface AlbumArtProvider {
 
     /** The art for the album [id] called [title] by [artist], whose own id here is [artistId]. */
     suspend fun findAlbum(id: String, title: String, artist: String, artistId: String?): AlbumArt?
+
+    /** What's already known of the film for the song [id], without asking anyone. */
+    fun cachedSongFilm(id: String): String? = null
+
+    /** A short looping film of the song's cover (an HLS playlist, video only and unencrypted), if its album has one. */
+    suspend fun findSongFilm(id: String, title: String, artist: String, album: String?): String? = null
 }

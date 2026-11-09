@@ -14,7 +14,8 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
-import androidx.media3.exoplayer.DefaultRenderersFactory
+import app.aether.core.model.EqProfile
+import kotlinx.coroutines.flow.StateFlow
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
@@ -57,6 +58,9 @@ interface PlaybackEnvironment {
     val queueStore: QueueStore
     val recorder: PlayRecorder
     val http: OkHttpClient
+
+    /** What the music should go through; null when nothing should touch it. */
+    val equaliser: StateFlow<EqProfile?>
     fun sessionActivity(): PendingIntent?
 }
 
@@ -69,7 +73,7 @@ interface PlaybackEnvironment {
  *   an address can't expire waiting in the queue. A stream refused mid-song is resolved afresh
  *   once and picks up where it stopped.
  * - Audio leaves the decoder as float where the device takes it: nothing above 16 bits is cut,
- *   nothing is resampled here.
+ *   nothing is resampled here. With no tuning chosen, the equaliser passes every sample through.
  * - The queue is written on every change and restored on a cold start, paused where it was.
  * - A song counts as played after 30 s, or half of it if shorter. Nothing else is recorded.
  */
@@ -85,6 +89,8 @@ class PlaybackService : MediaLibraryService() {
 
     /** The bit-perfect route watcher (Android 14 and later); typed loosely so older phones never load it. */
     private var bitPerfect: Any? = null
+    private var route = Route(null, false)
+    private val equaliser = EqualiserProcessor()
 
     override fun onCreate() {
         super.onCreate()
@@ -96,7 +102,7 @@ class PlaybackService : MediaLibraryService() {
             .setUpstreamDataSourceFactory(AudioStore.upstream(this))
             .setCacheWriteDataSinkFactory(null)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        player = ExoPlayer.Builder(this, DefaultRenderersFactory(this).setEnableAudioFloatOutput(true))
+        player = ExoPlayer.Builder(this, ShapedRenderers(this, equaliser).setEnableAudioFloatOutput(true))
             .setMediaSourceFactory(DefaultMediaSourceFactory(audio))
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)
@@ -107,15 +113,27 @@ class PlaybackService : MediaLibraryService() {
             .apply { env.sessionActivity()?.let { setSessionActivity(it) } }
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
-            bitPerfect = BitPerfect(this, player) { route ->
-                session?.setSessionExtras(Bundle().apply {
-                    putString(EXTRA_OUTPUT, route.device)
-                    putBoolean(EXTRA_BIT_PERFECT, route.bitPerfect)
-                })
+            bitPerfect = BitPerfect(this, player) { now ->
+                route = now
+                reportRoute()
             }.also { it.start() }
+        }
+        scope.launch {
+            env.equaliser.collect {
+                equaliser.update(it)
+                reportRoute()
+            }
         }
         scope.launch { restore() }
         scope.launch { countPlays() }
+    }
+
+    /** Samples an equaliser has changed aren't the file's, whatever the path does with them afterwards. */
+    private fun reportRoute() {
+        session?.setSessionExtras(Bundle().apply {
+            putString(EXTRA_OUTPUT, route.device)
+            putBoolean(EXTRA_BIT_PERFECT, route.bitPerfect && !equaliser.shaping)
+        })
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session

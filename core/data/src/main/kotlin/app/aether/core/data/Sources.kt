@@ -110,6 +110,10 @@ class Settings(context: Context) {
     /** The name the listener gave their Profile, if they did. */
     val profileName: StateFlow<String?> = _profileName.asStateFlow()
 
+    private val _songVideo = flag(SONG_VIDEO, true)
+    /** A song's cover plays its short film on Now Playing, where it has one. */
+    val songVideo: StateFlow<Boolean> = _songVideo.asStateFlow()
+
     private val _chartsCountry = MutableStateFlow(prefs.getString(CHARTS_COUNTRY, null))
     val chartsCountry: StateFlow<String?> = _chartsCountry.asStateFlow()
 
@@ -136,6 +140,15 @@ class Settings(context: Context) {
         prefs.edit().putString(PROFILE_NAME, trimmed).apply()
         _profileName.value = trimmed
     }
+    fun setSongVideo(on: Boolean) = set(SONG_VIDEO, on, _songVideo)
+
+    /** Whether the next card is silver: each takes the other finish from the one before. */
+    fun nextCardSilver(): Boolean {
+        val next = !prefs.getBoolean(CARD_SILVER, true)
+        prefs.edit().putBoolean(CARD_SILVER, next).apply()
+        return next
+    }
+
     fun setChartsCountry(code: String?) { prefs.edit().putString(CHARTS_COUNTRY, code).apply(); _chartsCountry.value = code }
 
     private fun set(key: String, value: Boolean, state: MutableStateFlow<Boolean>) {
@@ -155,6 +168,8 @@ class Settings(context: Context) {
         const val ARTWORK = "artwork_treatment"
         const val ARTWORK_CYCLE = "artwork_cycle"
         const val LYRICS_STYLE = "lyrics_style"
+        const val SONG_VIDEO = "song_video"
+        const val CARD_SILVER = "card_silver"
         const val PROFILE_NAME = "profile_name"
         const val KEPT_COLLECTIONS = "kept_collections"
         const val CHARTS_COUNTRY = "charts_country"

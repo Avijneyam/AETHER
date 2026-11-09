@@ -25,7 +25,7 @@ import app.aether.core.designsystem.theme.Ink
  * hairline marks, its Fill for play, pause, skip and a liked heart: one family, drawn by one hand);
  * the rooms' own marks on the tab bar (Listen, Discover, Library) and the gear stay AETHER's.
  */
-enum class Glyph { Play, Pause, Next, Previous, Shuffle, Repeat, RepeatOne, Heart, HeartFilled, Queue, Lyrics, More, Down, Back, Search, Close, Plus, Check, Download, Listen, Discover, Library, Profile, Gear, Forward, Edit, Trash }
+enum class Glyph { Play, Pause, Next, Previous, Shuffle, Repeat, RepeatOne, Heart, HeartFilled, Queue, Lyrics, More, Down, Back, Search, Close, Plus, Check, Download, Listen, Discover, Library, Profile, Gear, Share, Video, Forward, Edit, Trash }
 
 @Composable
 fun Icon(glyph: Glyph, modifier: Modifier = Modifier, size: Dp = 22.dp, color: Color = Ink.White, weight: Float = 1.4f) {
@@ -127,6 +127,17 @@ fun Icon(glyph: Glyph, modifier: Modifier = Modifier, size: Dp = 22.dp, color: C
                 // A listener: a head and shoulders.
                 drawCircle(color, 4.5f * u, p(12f, 8f))
                 drawPath(path { moveTo(4f * u, 20.6f * u); cubicTo(4.6f * u, 15.6f * u, 8f * u, 13.8f * u, 12f * u, 13.8f * u); cubicTo(16f * u, 13.8f * u, 19.4f * u, 15.6f * u, 20f * u, 20.6f * u); close() }, color)
+            }
+            Glyph.Share -> {
+                // Up and out of its tray.
+                line(12f, 3.6f, 12f, 14.6f)
+                drawPath(path { moveTo(8f * u, 7.4f * u); lineTo(12f * u, 3.4f * u); lineTo(16f * u, 7.4f * u) }, color, style = stroke)
+                drawPath(path { moveTo(8.4f * u, 11f * u); lineTo(5.4f * u, 11f * u); lineTo(5.4f * u, 20.6f * u); lineTo(18.6f * u, 20.6f * u); lineTo(18.6f * u, 11f * u); lineTo(15.6f * u, 11f * u) }, color, style = stroke)
+            }
+            Glyph.Video -> {
+                // A frame of film, playing.
+                drawRoundRect(color, p(3f, 5.5f), Size(18f * u, 13f * u), androidx.compose.ui.geometry.CornerRadius(3f * u), style = stroke)
+                drawPath(path { moveTo(10f * u, 9f * u); lineTo(15.4f * u, 12f * u); lineTo(10f * u, 15f * u); close() }, color)
             }
             Glyph.Gear -> {
                 for (k in 0 until 8) rotate(k * 45f, p(12f, 12f)) {

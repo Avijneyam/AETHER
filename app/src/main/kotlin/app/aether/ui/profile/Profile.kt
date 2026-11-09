@@ -1,5 +1,7 @@
 package app.aether.ui.profile
 
+import app.aether.core.designsystem.component.Icon
+import app.aether.core.designsystem.component.Glyph
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -153,7 +155,7 @@ fun ProfileScreen() {
     }
 }
 
-private const val StatsWindow = 20_000
+internal const val StatsWindow = 20_000
 
 private fun shows(list: LazyListState, key: String, hidden: () -> Boolean): Boolean =
     !hidden() && list.layoutInfo.visibleItemsInfo.any { it.key == key }
@@ -194,7 +196,11 @@ private fun Head(name: String, stats: ProfileStats?, photo: Artwork, onName: () 
             TreatedArtwork(photo, ArtTreatment.Print, Modifier.size(76.dp).clip(CircleShape), sizeHintPx = 240)
             Spacer(Modifier.height(16.dp))
         }
-        Txt(name, Type.name(name), align = TextAlign.Center, maxLines = 2, modifier = Modifier.quietClick(onName))
+        Row(Modifier.quietClick(onName), verticalAlignment = Alignment.CenterVertically) {
+            Txt(name, Type.name(name), align = TextAlign.Center, maxLines = 2, modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.width(12.dp))
+            Icon(Glyph.Edit, size = 16.dp, color = Ink.Grey)
+        }
         if (stats != null && !stats.isEmpty) {
             Spacer(Modifier.height(10.dp))
             Strapline(listOfNotNull(stats.persona, stats.secondPersona).joinToString("  ·  "), color = Ink.White)
@@ -269,7 +275,8 @@ private fun When(s: ProfileStats) {
     Column(Modifier.separate().fillMaxWidth().padding(top = 60.dp, start = Space.edge, end = Space.edge), horizontalAlignment = Alignment.CenterHorizontally) {
         SectionHeading("Your hours", strapline = "When the music's on")
         Spacer(Modifier.height(24.dp))
-        Box(Modifier.fillMaxWidth(0.84f).aspectRatio(1f)) {
+        // Wider than it is tall: the dial fills the height, and the words at its sides stand clear of its spokes.
+        Box(Modifier.fillMaxWidth(0.96f).aspectRatio(1.12f)) {
             ListeningClock(s.hours, Modifier.fillMaxSize().padding(22.dp))
             Txt("Midnight", Type.Label, color = Ink.Grey, upper = true, modifier = Modifier.align(Alignment.TopCenter))
             Txt("Noon", Type.Label, color = Ink.Grey, upper = true, modifier = Modifier.align(Alignment.BottomCenter))

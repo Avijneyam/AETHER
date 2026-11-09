@@ -59,7 +59,9 @@ private const val PULL_RIPPLE = """
 /** One wave and one pull across the screen. Costs nothing at all while nothing is moving. */
 @Stable
 class PullRipple {
-    private var waving by mutableStateOf(false)
+    /** A wave is on its way across. */
+    var waving by mutableStateOf(false)
+        private set
     private val time = mutableFloatStateOf(0f)
     private var origin = Offset.Zero
     private var amplitude = 0f

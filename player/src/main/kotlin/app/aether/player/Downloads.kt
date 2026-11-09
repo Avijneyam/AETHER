@@ -109,7 +109,7 @@ class Downloads(private val context: Context, private val scope: CoroutineScope)
     }
 
     fun keep(tracks: List<Track>) {
-        tracks.filter { it.available && it.id !in _entries.value }.forEach { t ->
+        tracks.filter { it.id !in _entries.value }.forEach { t ->
             val request = DownloadRequest.Builder(t.id.value, trackUri(t.id)).setCustomCacheKey("track:${t.id.value}").setData(t.toBytes()).build()
             DownloadService.sendAddDownload(context, KeepService::class.java, request, false)
         }

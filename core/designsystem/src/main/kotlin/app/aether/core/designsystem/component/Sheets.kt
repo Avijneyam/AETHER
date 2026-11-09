@@ -71,11 +71,12 @@ import kotlinx.coroutines.launch
  * where it is. A sheet pulled past open stretches with Apple's rubber band.
  */
 @Stable
-class DragState internal constructor(private val scope: CoroutineScope) {
+class DragState internal constructor(private val scope: CoroutineScope, private val give: Float, private val flick: Float) {
     private val anim = Animatable(0f)
     private var held by mutableFloatStateOf(0f)
     private var raw = 0f
     private var settling: Job? = null
+    private var startedOpen = true
 
     /** A finger has it. */
     var holding by mutableStateOf(false)
@@ -105,6 +106,7 @@ class DragState internal constructor(private val scope: CoroutineScope) {
             // Caught: held from exactly where it is. Whatever spring was carrying it is stopped by
             // the next settle's snap, never by a stop that could arrive after that settle began.
             settling?.cancel()
+            startedOpen = anim.value > 0.5f
             raw = anim.value
             held = raw
             holding = true
@@ -117,16 +119,16 @@ class DragState internal constructor(private val scope: CoroutineScope) {
 
     /**
      * Let go at [velocityY] pixels per second, down positive. A deliberate flick goes the way it
-     * was thrown, however short the pull (iOS's sheets close on a flick); otherwise it lands where
-     * the flick would carry it (Apple's projection), open or closed, whichever is nearer. Either
-     * way the spring starts at the finger's speed.
+     * was thrown, however short the pull (iOS's sheets close on a flick); otherwise it goes the way
+     * it was being pulled if the flick would carry it past [give] of the travel from where it began.
+     * Either way the spring starts at the finger's speed.
      */
     fun settle(velocityY: Float) {
         val velocity = -velocityY / travelPx
         val target = when {
-            velocity < -Flick -> 0f
-            velocity > Flick -> 1f
-            FluidSpring.project(value.coerceAtMost(1f), velocity) > 0.5f -> 1f
+            velocity < -flick -> 0f
+            velocity > flick -> 1f
+            FluidSpring.project(value.coerceAtMost(1f), velocity) > (if (startedOpen) 1f - give else give) -> 1f
             else -> 0f
         }
         animate(target, velocity)
@@ -144,19 +146,26 @@ class DragState internal constructor(private val scope: CoroutineScope) {
     }
 
     private companion object {
-        /** A flick: faster than 0.55 of the whole travel a second (about 1,300 px/s on this phone). */
-        const val Flick = 0.55f
-
         /** Opening comes to rest with a cushion; closing doesn't bounce. */
         val OpenSpring = Motion.fluid(0.44f, 0.86f, 0.0008f)
         val CloseSpring = Motion.fluid(0.4f, 1f, 0.0008f)
     }
 }
 
+/**
+ * [give] is how much of the travel has to be pulled for it to go, and [flick] how fast (of the whole
+ * travel, a second) a throw has to be to go however short it was.
+ */
 @Composable
-fun rememberDragState(): DragState {
+fun rememberDragState(give: Float = 0.5f, flick: Float = 0.55f): DragState {
     val scope = rememberCoroutineScope()
-    return remember { DragState(scope) }
+    return remember { DragState(scope, give, flick) }
+}
+
+/** What fills the screen is a long way to pull: it goes after a fifth of it, or on a light throw. */
+object Pull {
+    const val Give = 0.2f
+    const val Flick = 0.3f
 }
 
 /**

@@ -221,7 +221,7 @@ fun ClockDial(
             },
         )
         // The time gone, large in the serif, and what's left beneath it, at the dial's heart.
-        Column(Modifier.align(Alignment.BottomCenter).padding(bottom = Foot + 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.align(Alignment.BottomCenter).padding(bottom = Foot + 26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Txt(clock(shownMs), Type.Title.copy(fontSize = 22.sp, lineHeight = 26.sp), color = if (scrub != null) Ink.White else Ink.White.copy(alpha = 0.92f))
             Txt(if (durationMs > 0) "−" + clock((durationMs - shownMs).coerceAtLeast(0)) else "", Type.Meta, color = Ink.Grey)
         }

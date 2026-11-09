@@ -189,6 +189,21 @@ decent-usb-audio-driver (MIT), libsoxr (LGPL-2.1, built as a shared library), Ne
   `primaryGenreName` for the most played artists, under the artist-art setting, and left out when unknown. Kinds of
   song come from titles. The card is drawn once at a fixed density, so it's always 1080 by 1920, and captured from a
   graphics layer; shared through a `FileProvider` copy, saved through the media store.
+- **The statue morph** (`core/designsystem/.../art/DotMorph.kt`): a programmable mesh (Android 14) of one quad per visible
+  dot. Dots are ranked by brightness in 24 equal shares, and within a share along a Hilbert curve, then paired by rank
+  between the two prints. Built off the main thread before each change and dropped after; each frame is one uniform and
+  one draw call. The dots use the halftone's lattice and tone, so the prints at either end hand over without a jump.
+- **Equaliser** (`player/.../Equaliser.kt`, `core/model/.../Equaliser.kt`, `core/data/.../EqualiserStore.kt`): PODIUM's
+  `EqualizerProcessor` extended from ten fixed bands to any peaking, shelving, low-pass or high-pass filters, and crossfaded
+  so that a change never clicks. It lowers everything by the curve's highest point, so a boost can't clip, and with no
+  tuning it passes samples through unchanged. The headphones are AutoEq's parametric results (MIT), measured by
+  oratory1990, HypetheSonics, Rtings, kr0mka and Kuulokenurkka, in `core/data/src/main/assets/eq_headphones.json`.
+  Imported files are read by `EqText`, which never throws and keeps every number within range.
+- **Song video** (`SongFilm`, `AppleArt.findSongFilm`): the iTunes search finds the song by title and artist, and its
+  album's public page gives the tall or square film (no `EXT-X-KEY`, checked). BitChord and LastWave also ask Tidal,
+  Spotify and a community index; those need a borrowed client token, the listener's Spotify cookie or an unknown
+  third party, so they aren't taken. LastWave's full music videos synced to the audio aren't taken either. A link
+  under 3 Mbps doesn't ask, and a film with no frame after 9 s is let go.
 - **Line lyrics** (`app/.../ui/lyrics/line`, from PODIUM's `feature/nowplaying/line`): the drawing is
   prepared off the main thread for each song, and each frame only maps the position to a cursor. In
   AETHER's white on black, not PODIUM's ivory and gold. Words in scripts the pen doesn't write are traced

@@ -1,5 +1,6 @@
 package app.aether.ui.player
 
+import app.aether.core.designsystem.component.Pull
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -128,6 +129,7 @@ import kotlin.math.PI
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -179,7 +181,16 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
     val treatmentIndex by container.settings.artwork.collectAsStateWithLifecycle()
     val treatment = ArtTreatment.Cycle[treatmentIndex.mod(ArtTreatment.Cycle.size)]
     val queueSheet = rememberDragState()
-    val lyricsPane = rememberDragState()
+    val lyricsPane = rememberDragState(give = Pull.Give, flick = Pull.Flick)
+    val songVideo by container.settings.songVideo.collectAsStateWithLifecycle()
+    val films = remember { mutableStateListOf(FilmSlot(track)) }
+    LaunchedEffect(track.id) {
+        if (films.lastOrNull()?.track?.id != track.id) {
+            films.lastOrNull()?.leaving = true
+            films += FilmSlot(track)
+        }
+    }
+    val artAllowed by container.settings.artistArt.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val liked by container.library.isLiked(track.id).collectAsStateWithLifecycle(false)
     val lyrics = rememberLyrics(track)
@@ -210,6 +221,12 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
                 // pixels of the cover, blurred once and cached, stretched over the screen.
                 SoftArt(track.artwork, Modifier.fillMaxSize().alpha(0.34f), px = 32)
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.2f), 0.5f to Color.Black.copy(alpha = 0.6f), 1f to Color.Black)))
+                // The cover as it is can move; a print of it stays a print.
+                if (treatment == ArtTreatment.Original) films.toList().forEach { film ->
+                    key(film) {
+                        SongFilm(film, playing = state.isPlaying && !still && !lyricsUp, onGone = { films.remove(film) }, fade = stage.filmFade, modifier = Modifier.fillMaxWidth().height(stage.filmFoot))
+                    }
+                }
                 Column(Modifier.at(stage.heading), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) {
                     Txt("Now playing", Type.Label, upper = true, modifier = Modifier.padding(top = 18.dp))
                     if (state.queue.size > 1) Txt("${state.index + 1} of ${state.queue.size}", Type.Meta, color = Ink.Grey)
@@ -217,6 +234,7 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
                 Print(
                     track = track,
                     grain = !still,
+                    filmUp = { if (treatment == ArtTreatment.Original) films.maxOfOrNull { it.up.value } ?: 0f else 0f },
                     index = state.index,
                     treatment = treatment,
                     microtype = microtype(track, state, lyrics),
@@ -249,6 +267,17 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
                     "Close",
                     onClose,
                     Modifier.at(stage.close).graphicsLayer { alpha = ((player.value - 0.86f) / 0.14f).coerceIn(0f, 1f) },
+                    backdrop = null,
+                )
+                GlassCircle(
+                    Glyph.Video,
+                    if (songVideo && artAllowed) "Song video on" else "Song video off",
+                    {
+                        haptics.tick()
+                        if (artAllowed) container.settings.setSongVideo(!songVideo) else actions.keep.note("Turn on Artist and album art in Settings")
+                    },
+                    Modifier.at(stage.film).graphicsLayer { alpha = ((player.value - 0.86f) / 0.14f).coerceIn(0f, 1f) },
+                    lit = songVideo && artAllowed,
                     backdrop = null,
                 )
                 ClockDial(
@@ -305,6 +334,7 @@ private fun Modifier.at(spot: Spot): Modifier = this.offset(spot.x, spot.y).size
 private class Stage(w: Dp, h: Dp, top: Dp, bottom: Dp) {
     private val edge = Space.edge
     val close = Spot(edge, top + 6.dp, 44.dp, 44.dp)
+    val film = Spot(w - edge - 44.dp, top + 6.dp, 44.dp, 44.dp)
     val heading = Spot(edge + 56.dp, top + 2.dp, w - (edge + 56.dp) * 2, 52.dp)
     val grabber = Spot(w / 2 - 36.dp, top + 2.dp, 72.dp, 16.dp)
     private val radius = minOf((w - edge * 2) / 2, h * 0.2f)
@@ -324,6 +354,13 @@ private class Stage(w: Dp, h: Dp, top: Dp, bottom: Dp) {
     /** The housing's box: the screen's width, from just above the band down to the dial's pivot. */
     val ring = Spot(0.dp, pivotY - ringOuter - 10.dp, w, ringOuter + 10.dp)
     val song = Spot(edge, ring.y + 10.dp - 8.dp - 96.dp, w - edge * 2, 96.dp)
+
+    /** A song's film goes in rings round the dial's own centre: gone by the song's name, whole 200 dp further out. */
+    private val filmGone = pivotY - song.y - 8.dp
+    val filmFade = FilmFade(pivotY, filmGone, filmGone + 200.dp)
+
+    /** Far enough down for the last of those rings, at the screen's edges where it falls lowest. */
+    val filmFoot = pivotY - sqrt((filmGone.value * filmGone.value - (w.value / 2f) * (w.value / 2f)).coerceAtLeast(0f)).dp
     val print: Spot
 
     init {
@@ -573,6 +610,7 @@ private const val PrintWaitMs = 1800L
 private fun Print(
     track: Track,
     grain: Boolean,
+    filmUp: () -> Float,
     index: Int,
     treatment: ArtTreatment,
     microtype: List<String>,
@@ -622,6 +660,8 @@ private fun Print(
                 val pull = FluidSpring.rubberBand(drag.value, size.width.coerceAtLeast(1f))
                 translationX = pull * 0.6f
                 rotationZ = pull / 600f
+                // It gives way to the song's film, and comes back when that goes.
+                alpha = 1f - filmUp().coerceIn(0f, 1f)
                 clip = true
                 shape = Corners.Medium
             }

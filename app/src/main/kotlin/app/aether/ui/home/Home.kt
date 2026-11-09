@@ -1,5 +1,21 @@
 package app.aether.ui.home
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import app.aether.core.designsystem.art.DotMorphLayer
+import app.aether.core.designsystem.art.DotMorph
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.annotation.RequiresApi
+import android.util.Log
+import android.os.Build
+import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.content.Context
+import kotlinx.coroutines.delay
+import app.aether.core.designsystem.art.Pictures
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import app.aether.ui.common.rememberPageListState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -102,6 +118,47 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.size
 
+/** The figures behind Listen, each held a while before the next comes up. */
+private val Statues = listOf(
+    R.drawable.art_statue,
+    R.drawable.art_god_zeus,
+    R.drawable.art_god_hera,
+    R.drawable.art_god_apollo,
+    R.drawable.art_god_nike,
+    R.drawable.art_god_smyrna,
+    R.drawable.art_god_artemis,
+    R.drawable.art_god_poseidon,
+    R.drawable.art_god_athena,
+    R.drawable.art_god_hermes,
+    R.drawable.art_god_aphrodite,
+    R.drawable.art_god_dionysus,
+)
+private const val StatueHoldMs = 9_000L
+
+/** The dots have all landed by 0.94 of this; it has a long, slow end, in which one print becomes the other. */
+private val Reassembles = Motion.fluid(3.6f, 1f, 0.0008f)
+private val Crossfades = Motion.fluid(1.7f, 1f, 0.002f)
+
+private fun ramp(x: Float, from: Float, to: Float) = ((x - from) / (to - from)).coerceIn(0f, 1f)
+
+/** The morph from one statue to the next, or null if this phone can't make it (the masthead crossfades instead). */
+@RequiresApi(34)
+private suspend fun dotsBetween(context: Context, from: Int, to: Int, box: IntSize, density: Float): DotMorph? = withContext(Dispatchers.Default) {
+    runCatching {
+        val options = BitmapFactory.Options().apply {
+            inScaled = false
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val a = BitmapFactory.decodeResource(context.resources, from, options)
+        val b = BitmapFactory.decodeResource(context.resources, to, options)
+        DotMorph.build(a, b, box.width, box.height, StatuePrint.dotDp * density, StatuePrint.angle, StatuePrint.contrast, density).also {
+            a.recycle()
+            b.recycle()
+        }
+    }.onFailure { Log.w("AETHER", "Dot morph unavailable", it) }.getOrNull()
+}
+private val StatuePrint = ArtTreatment.Halftone(dotDp = 2.3f, angle = 0.6f, contrast = 1.45f)
+
 /** What Home has loaded past its first page, and the first page it continues ([anchor], its first section's name). */
 private class HomeMore(val anchor: String?, val sections: List<FeedSection>, val next: PageToken?)
 
@@ -150,7 +207,7 @@ fun HomeScreen() {
     }
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 0.dp)) {
         // A photograph, not the service's abstract backdrop: the first cover on the page.
-        item(key = "masthead") { Masthead(Modifier.separate()) }
+        item(key = "masthead") { Masthead(Modifier.separate(), onScreen = { list.firstVisibleItemIndex == 0 }) }
         // Every row keeps its place in the list even while it's empty (the library's rows arrive a
         // frame after the page), so coming back restores the page exactly where it was left.
         item(key = "filters") {
@@ -216,10 +273,38 @@ fun HomeScreen() {
  * a jeweller's catalogue opens on a photograph rather than a list.
  */
 @Composable
-private fun Masthead(modifier: Modifier = Modifier) {
+private fun Masthead(modifier: Modifier = Modifier, onScreen: () -> Boolean) {
     val reduce = LocalReduceMotion.current
     val context = LocalContext.current
-    val statue = remember { Artwork.single("android.resource://${context.packageName}/${R.drawable.art_statue}", 493, 740) }
+    val statues = remember { Statues.map { Artwork.single("android.resource://${context.packageName}/$it", 493, 740) } }
+    var shown by rememberSaveable { mutableIntStateOf(0) }
+    var coming by remember { mutableStateOf<Int?>(null) }
+    // A DotMorph, typed loosely so that phones before Android 14 never load it. They crossfade.
+    var morph by remember { mutableStateOf<Any?>(null) }
+    var box by remember { mutableStateOf(IntSize.Zero) }
+    val change = remember { Animatable(0f, 0.0008f) }
+    val roomsHidden = LocalRoomsHidden.current
+    val density = LocalDensity.current.density
+    // One after another, resting while Home can't be seen. Everything the change needs is ready before it starts.
+    if (statues.size > 1 && !reduce) LaunchedEffect(statues) {
+        while (true) {
+            delay(StatueHoldMs)
+            snapshotFlow { onScreen() && !roomsHidden() && box != IntSize.Zero }.first { it }
+            val next = (shown + 1) % statues.size
+            Pictures.fetch(context, statues[next].url(1080), 1080, software = true)
+            val dots = if (Build.VERSION.SDK_INT >= 34) dotsBetween(context, Statues[shown], Statues[next], box, density) else null
+            try {
+                change.snapTo(0f)
+                coming = next
+                morph = dots
+                change.animateTo(1f, if (dots != null) Reassembles else Crossfades)
+                shown = next
+            } finally {
+                coming = null
+                morph = null
+            }
+        }
+    }
     val emerge = remember { Animatable(if (reduce) 1f else 0f) }
     LaunchedEffect(Unit) { emerge.animateTo(1f, tween(if (reduce) 0 else 2400, easing = Motion.Editorial)) }
 
@@ -227,14 +312,43 @@ private fun Masthead(modifier: Modifier = Modifier) {
     // dock, and nothing half hidden under it. So the figure is as tall as that leaves.
     val window = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
     val foot = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + DockHeight + RibbonHeight + 12.dp
-    Box(modifier.fillMaxWidth().height((window - foot).coerceIn(480.dp, 760.dp))) {
+    Box(modifier.fillMaxWidth().height((window - foot).coerceIn(480.dp, 760.dp)).onSizeChanged { box = it }) {
         Box(Modifier.matchParentSize()) {
-            TreatedArtwork(
-                statue,
-                ArtTreatment.Halftone(dotDp = 2.3f, angle = 0.6f, contrast = 1.45f),
-                Modifier.fillMaxSize().graphicsLayer { alpha = emerge.value * 0.92f },
-                sizeHintPx = 1080,
-            )
+            key(shown) {
+                TreatedArtwork(
+                    statues[shown],
+                    StatuePrint,
+                    Modifier.fillMaxSize().graphicsLayer {
+                        alpha = emerge.value * 0.92f * when {
+                            coming == null -> 1f
+                            morph != null -> 1f - ramp(change.value, 0f, 0.05f)
+                            else -> 1f - change.value
+                        }
+                    },
+                    sizeHintPx = 1080,
+                )
+            }
+            coming?.let { next ->
+                key(next) {
+                    TreatedArtwork(
+                        statues[next],
+                        StatuePrint,
+                        Modifier.fillMaxSize().graphicsLayer {
+                            alpha = emerge.value * 0.92f * (if (morph != null) ramp(change.value, 0.94f, 1f) else change.value)
+                        },
+                        sizeHintPx = 1080,
+                    )
+                }
+            }
+            if (Build.VERSION.SDK_INT >= 34) morph?.let { dots ->
+                DotMorphLayer(
+                    dots as DotMorph,
+                    { change.value },
+                    Modifier.fillMaxSize().graphicsLayer {
+                        alpha = 0.92f * ramp(change.value, 0f, 0.05f) * (1f - ramp(change.value, 0.94f, 1f))
+                    },
+                )
+            }
             // The room's darkness drawn in from the left and from below, so the figure stands out of it.
             Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.6f), 0.45f to Color.Transparent)))
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.35f), 0.4f to Color.Transparent, 0.72f to Color.Black.copy(alpha = 0.55f), 1f to Color.Black)))

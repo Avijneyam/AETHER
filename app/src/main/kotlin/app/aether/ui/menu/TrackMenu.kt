@@ -104,6 +104,7 @@ fun TrackMenu(track: Track, close: () -> Unit) {
                     else -> Entry(Glyph.Download, "Keeping  ${(keeping.progress * 100).toInt()}%  ·  Stop") { container.downloads.forget(track.id); close() }
                 }
             }
+            Entry(Glyph.Share, "Share song card") { actions.card.openSong(track); close() }
             Head("Go to")
             Entry(Glyph.Discover, "Start radio") { actions.play(listOf(track)); close() }
             track.album?.id?.let { album -> Entry(Glyph.Library, "Go to album") { actions.go(Route.Album(album)) } }

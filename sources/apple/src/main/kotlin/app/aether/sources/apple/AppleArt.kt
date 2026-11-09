@@ -53,6 +53,7 @@ class AppleArt(private val http: ArtHttp, private val cacheDir: File? = null) : 
     private class Answer(val art: ArtistArt?)
     private class AlbumAnswer(val art: AlbumArt?)
     private class Genre(val name: String?)
+    private class SongAnswer(val film: String?)
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val memory = object : LinkedHashMap<String, Answer>(64, 0.75f, true) {
@@ -61,6 +62,10 @@ class AppleArt(private val http: ArtHttp, private val cacheDir: File? = null) : 
 
     private val albums = object : LinkedHashMap<String, AlbumAnswer>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, AlbumAnswer>) = size > 256
+    }
+
+    private val songs = object : LinkedHashMap<String, SongAnswer>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, SongAnswer>) = size > 512
     }
 
     private val genres = object : LinkedHashMap<String, Genre>(64, 0.75f, true) {
@@ -154,6 +159,71 @@ class AppleArt(private val http: ArtHttp, private val cacheDir: File? = null) : 
         runCatching {
             file.parentFile?.mkdirs()
             file.writeText(buildJsonObject { put("at", System.currentTimeMillis()); answer.name?.let { put("genre", it) } }.toString())
+        }
+    }
+
+    override fun cachedSongFilm(id: String): String? = synchronized(songs) { songs[id] }?.film
+
+    override suspend fun findSongFilm(id: String, title: String, artist: String, album: String?): String? {
+        synchronized(songs) { songs[id] }?.let { return it.film }
+        return try {
+            withContext(Dispatchers.IO) {
+                val answer = songFromDisk(id) ?: lookupSongFilm(title, artist, album)?.also { songToDisk(id, it) } ?: return@withContext null
+                synchronized(songs) { songs[id] = answer }
+                answer.film
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** The song of this title by this artist; its album's page has the film. Null when the network gave no answer. */
+    private suspend fun lookupSongFilm(title: String, artist: String, album: String?): SongAnswer? {
+        val who = matchKey(artist)
+        val what = albumKey(title)
+        if (who.isEmpty() || what.isEmpty()) return SongAnswer(null)
+        val found = http.get("https://itunes.apple.com/search?term=${URLEncoder.encode("$artist $title", "UTF-8")}&entity=song&limit=15") ?: return null
+        val results = (json.parseToJsonElement(found).jsonObject["results"] as? JsonArray) ?: return SongAnswer(null)
+        val wanted = album?.let(::albumKey)
+        val same = results.mapNotNull { it as? JsonObject }
+            .filter { r ->
+                val credit = r.str("artistName").orEmpty()
+                (matchKey(credit) == who || matchKey(firstCredit(credit)) == who) && albumKey(r.str("trackName").orEmpty()) == what
+            }
+            .distinctBy { it.long("collectionId") }
+            .sortedBy { albumKey(it.str("collectionName").orEmpty()) != wanted }
+        for (edition in same.take(FilmEditions)) {
+            val page = edition.str("collectionViewUrl")?.substringBefore('?')?.takeIf { it.isNotBlank() } ?: continue
+            songFilm(http.get(page) ?: return null)?.let { return SongAnswer(it) }
+        }
+        return SongAnswer(null)
+    }
+
+    /** The tall film if there is one, being nearer the shape of a print than the square. */
+    private fun songFilm(html: String): String? {
+        val header = serverData(html)?.let { firstWith(it, "videoArtwork") } ?: return null
+        fun film(block: String, name: String) = ((header[block] as? JsonObject)?.get("dictionary") as? JsonObject)
+            ?.get(name)?.let { it as? JsonObject }
+            ?.str("video")?.takeIf { it.startsWith("https://") }
+        return film("tallVideoArtwork", "motionDetailTall") ?: film("videoArtwork", "motionDetailSquare")
+    }
+
+    private fun songFromDisk(id: String): SongAnswer? {
+        val file = fileFor("song:$id")?.takeIf { it.exists() } ?: return null
+        return runCatching {
+            val o = json.parseToJsonElement(file.readText()).jsonObject
+            val film = o.str("film")
+            if (System.currentTimeMillis() - (o.long("at") ?: 0L) > (if (film != null) MonthMs else WeekMs)) null else SongAnswer(film)
+        }.getOrNull()
+    }
+
+    private fun songToDisk(id: String, answer: SongAnswer) {
+        val file = fileFor("song:$id") ?: return
+        runCatching {
+            file.parentFile?.mkdirs()
+            file.writeText(buildJsonObject { put("at", System.currentTimeMillis()); answer.film?.let { put("film", it) } }.toString())
         }
     }
 
@@ -380,6 +450,9 @@ class AppleArt(private val http: ArtHttp, private val cacheDir: File? = null) : 
         /** A title as both services agree on it. Too short a title ("War", "Intro") proves nothing. */
         fun titleKey(title: String): String? =
             albumKey(title).takeIf { it.length >= 4 }
+
+        /** The first of several credited ("A, B & C"). */
+        fun firstCredit(name: String): String = name.split(", ", " & ", " feat", " Feat").first()
 
         /** A release's title, whichever edition it is. Short ones count here: the artist has to match as well. */
         fun albumKey(title: String): String =

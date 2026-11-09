@@ -88,6 +88,8 @@ fun SettingsScreen() {
     val timedLyrics by settings.timedLyrics.collectAsStateWithLifecycle()
     val artistArt by settings.artistArt.collectAsStateWithLifecycle()
     val lyricsStyle by settings.lyricsStyle.collectAsStateWithLifecycle()
+    val songVideo by settings.songVideo.collectAsStateWithLifecycle()
+    val eqShaping by container.equaliser.shaping.collectAsStateWithLifecycle()
     val phoneFolders by container.local.folders.collectAsStateWithLifecycle()
     val phoneChoice by container.local.selection.collectAsStateWithLifecycle()
     val actions = LocalActions.current
@@ -168,6 +170,16 @@ fun SettingsScreen() {
         item {
             Section("IV", "Sound") {
                 Toggle("Data saver", "Lower-bitrate streams for metered networks. Off plays the best the source has.", efficient) { settings.setEfficient(!efficient) }
+                Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Words(
+                        "Equaliser",
+                        eqShaping?.let { listOfNotNull(it.group, it.name).joinToString(" ") } ?: "Off. Tunings, corrections measured for your headphones, or a profile of your own.",
+                        Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(18.dp))
+                    GlassPill("Open", small = true, trailingIcon = Glyph.Forward, onClick = { actions.nav.open(Route.Equaliser) })
+                }
+                Rule()
             }
         }
         item {
@@ -197,6 +209,11 @@ fun SettingsScreen() {
                     selected = lyricsStyle.coerceIn(0, 1),
                     onSelect = { settings.setLyricsStyle(it) },
                 )
+                Toggle(
+                    "Song video",
+                    "The cover's short film, in colour, for the albums Apple Music has one for. The cover shows first and the film takes over once it has loaded; on a slow connection or the data saver it isn't loaded at all. Asking sends the song's title and artist; nothing else. Needs Artist and album art.",
+                    songVideo,
+                ) { settings.setSongVideo(!songVideo) }
                 Choice(
                     title = "The cover",
                     detail = "How the print is shown. Touch the cover on Now Playing to change it at any time.",
@@ -223,7 +240,7 @@ fun SettingsScreen() {
         }
         item {
             Section("IX", "Privacy") {
-                Paragraph("AETHER has no analytics and no accounts. Your likes, playlists and history stay on this phone. The only requests it makes are the ones that load pages and play music, and, if you leave them on, the ones for timed lyrics and for artist and album art. The music on the phone is read on the phone.")
+                Paragraph("AETHER has no analytics and no accounts. Your likes, playlists and history stay on this phone. The only requests it makes are the ones that load pages and play music, and, if you leave them on, the ones for timed lyrics, song video and artist and album art. The music on the phone is read on the phone.")
             }
         }
         item {
