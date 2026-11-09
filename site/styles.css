@@ -78,6 +78,10 @@ img, video, canvas { display: block; }
 .hero__fallback { position: absolute; inset: 0; margin: auto; height: 100%; object-fit: contain; opacity: .8; display: none; }
 .no-gl #dots { display: none; }
 .no-gl .hero__fallback { display: block; }
+/* Where the figure is as wide as the window, the bar would stand on its dots: the top of the niche goes dark. */
+@media (max-width: 1100px), (max-aspect-ratio: 11/10) {
+  .hero__stage::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 150px; pointer-events: none; background: linear-gradient(rgba(0, 0, 0, .96), rgba(0, 0, 0, .86) 36%, rgba(0, 0, 0, .44) 68%, transparent); }
+}
 .hero__title { position: absolute; left: 0; right: 0; bottom: clamp(44px, 8vh, 96px); text-align: center; will-change: transform, opacity; }
 .hero__word { display: block; font-family: var(--script); font-weight: 400; font-size: clamp(120px, min(23vw, 40vh), 460px); line-height: 1; color: var(--white); text-shadow: 0 0 80px rgba(0, 0, 0, .55); padding: .2em 0; margin: -.2em 0; -webkit-mask: linear-gradient(104deg, #000 44%, transparent 56%) 100% 0 / 330% 100% no-repeat; mask: linear-gradient(104deg, #000 44%, transparent 56%) 100% 0 / 330% 100% no-repeat; transition: -webkit-mask-position 2.5s cubic-bezier(.3, .55, .2, 1), mask-position 2.5s cubic-bezier(.3, .55, .2, 1); }
 .ready .hero__word { -webkit-mask-position: 0 0; mask-position: 0 0; transition-delay: .35s; }
