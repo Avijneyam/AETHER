@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AETHER. A private room for music.</title>
+<meta name="description" content="A premium music player for Android, built around the sound. No ads, no tracking, no nonsense.">
+<meta name="theme-color" content="#000000">
+<meta property="og:type" content="website">
+<meta property="og:title" content="AETHER. A private room for music.">
+<meta property="og:description" content="A premium music player for Android, built around the sound. No ads, no tracking, no nonsense.">
+<meta property="og:url" content="https://aether-music-player.vercel.app/">
+<meta property="og:image" content="https://aether-music-player.vercel.app/assets/media/share.jpg">
+<link rel="canonical" href="https://aether-music-player.vercel.app/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="assets/fonts/pinyon-script.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23000'/%3E%3Cpath d='M16 2l1 12 7 2-7 2-1 12-1-12-7-2 7-2z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<noscript><style>[data-reveal],.greek .ch{opacity:1;transform:none;filter:none}.veil{display:none}.hero__word{-webkit-mask:none;mask:none}.hero__line{opacity:1}</style></noscript>
+</head>
+<body>
+
+<svg class="defs" width="0" height="0" aria-hidden="true"><filter id="lens" color-interpolation-filters="sRGB"><feImage id="lens-map" result="map" preserveAspectRatio="none"/><feDisplacementMap in="SourceGraphic" in2="map" scale="46" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
+
+<div class="veil" aria-hidden="true">
+  <div class="veil__inner">
+    <div class="cross"><i class="halo"></i><i class="vg"></i><i class="v"></i><i class="hg"></i><i class="h"></i><i class="core"></i></div>
+    <div class="veil__year caps">MMXXVI</div>
+  </div>
+</div>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="bar caps">
+  <a class="bar__mark" href="#top" aria-label="AETHER, to the top">Aether</a>
+  <a class="link" href="https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v1.apk">Download</a>
+</header>
+
+<main id="top">
+
+  <section class="hero" aria-label="AETHER">
+    <div class="hero__stage">
+      <canvas id="dots" aria-hidden="true"></canvas>
+      <img class="hero__fallback" src="assets/statues/statue.jpg" alt="" aria-hidden="true">
+      <div class="label label--left" aria-hidden="true">
+        <span class="label__fig caps mask"><span id="fig">Fig. I</span></span>
+        <span class="label__name mask"><span id="name">The Listener</span></span>
+        <span class="label__note mask"><span id="note">Made for AETHER, MMXXVI</span></span>
+      </div>
+      <div class="label label--right" aria-hidden="true">
+        <span class="label__fig caps">Plate</span>
+        <span class="label__count mask"><span id="count">I</span></span>
+        <span class="label__of caps">of XII</span>
+      </div>
+      <h1 class="hero__title">
+        <span class="hero__word">Aether</span>
+        <span class="hero__line caps">A private room for music</span>
+      </h1>
+      <div class="hero__hint" aria-hidden="true"><i></i></div>
+    </div>
+  </section>
+
+  <section class="name" id="name-of-it" data-chapter="0" data-watch>
+    <p class="chapter" data-reveal><i>I</i><span class="caps">The name</span></p>
+    <h2 class="greek" aria-label="Aither, in Greek" data-reveal>
+      <span class="ch" style="--i:0">A</span><span class="ch" style="--i:1">I</span><span class="ch theta" style="--i:2">O<b></b></span><span class="ch" style="--i:3">H</span><span class="ch" style="--i:4">P</span>
+    </h2>
+    <p class="gloss" data-reveal><span class="aside">aithḗr,</span> the pure bright air above the clouds. What the gods breathed.</p>
+    <div class="meander" aria-hidden="true" data-reveal></div>
+  </section>
+
+  <section class="creed" data-watch>
+    <div class="creed__stage">
+      <p class="lit">Music apps have come to resemble one another. AETHER began on a blank black page, and it looks like none of them. One glass. Three typefaces. No colour but your music’s own.</p>
+    </div>
+  </section>
+
+  <section class="room" id="room" data-chapter="1" data-watch>
+    <div class="room__stage">
+      <div class="room__glow" id="room-glow" aria-hidden="true"></div>
+      <div class="room__copy">
+        <article class="plate on">
+          <p class="caps plate__no">Plate I</p>
+          <h3 class="plate__name">Listen</h3>
+          <p class="plate__line">The homepage is a gallery.</p>
+          <p class="plate__text">Twelve figures from antiquity, printed in dots. Every nine seconds each dot crosses the screen and lands as part of the next god.</p>
+        </article>
+        <article class="plate">
+          <p class="caps plate__no">Plate II</p>
+          <h3 class="plate__name">Now Playing</h3>
+          <p class="plate__line">An instrument.</p>
+          <p class="plate__text">Where an album has a film, the cover gives way to it, in colour, fading along the arc of the dial beneath it.</p>
+        </article>
+        <article class="plate">
+          <p class="caps plate__no">Plate III</p>
+          <h3 class="plate__name">Artists</h3>
+          <p class="plate__line">In their own hand.</p>
+          <p class="plate__text">A portrait in black and white, and the name set in the artist’s own lettering, where they have one.</p>
+        </article>
+        <article class="plate">
+          <p class="caps plate__no">Plate IV</p>
+          <h3 class="plate__name">Folders</h3>
+          <p class="plate__line">Grey glass.</p>
+          <p class="plate__text">Playlists are folders of frosted glass. The only colour is the covers of the songs rising out of them.</p>
+        </article>
+      </div>
+      <div class="phone" aria-hidden="true">
+        <div class="phone__screen">
+          <img src="assets/screens/listen.webp" alt="">
+          <img src="assets/screens/now-playing.webp" alt="" loading="lazy">
+          <img src="assets/screens/artist.webp" alt="" loading="lazy">
+          <img src="assets/screens/folders.webp" alt="" loading="lazy">
+        </div>
+      </div>
+      <ol class="room__index caps" aria-hidden="true">
+        <li class="on">Listen</li><li>Now Playing</li><li>Artists</li><li>Folders</li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="sound" id="sound" data-chapter="2" data-watch>
+    <div class="sound__head">
+      <p class="chapter chapter--left" data-reveal><i>III</i><span class="caps">The sound</span></p>
+      <h2 class="display" data-reveal>Measured, never&nbsp;claimed.</h2>
+      <p class="reading" data-reveal>AETHER prints what the decoder measured and nothing it didn’t. “Bit-perfect” appears only once your phone has confirmed the path. Turn on a tuning and the words take themselves away.</p>
+    </div>
+    <div class="sound__bench">
+      <div class="curve" data-reveal>
+        <div class="curve__read">
+          <div><span class="caps" id="curve-name">Apple AirPods Max</span><span class="aside" id="curve-by">Measured by oratory1990</span></div>
+          <span class="caps curve__axis">± 12 dB</span>
+        </div>
+        <canvas id="curve" aria-label="The correction curve for the selected headphones"></canvas>
+      </div>
+      <ul class="models" id="models" data-reveal></ul>
+    </div>
+    <ul class="facts">
+      <li data-reveal><b>39</b><span>headphones, corrected from published measurements</span></li>
+      <li data-reveal><b>Float</b><span>out of the decoder, with nothing above 16 bits cut</span></li>
+      <li data-reveal><b>0</b><span>samples changed when no tuning is chosen</span></li>
+    </ul>
+  </section>
+
+  <section class="hand" id="hand" data-chapter="3" data-watch>
+    <div class="hand__copy">
+      <p class="chapter" data-reveal><i>IV</i><span class="caps">The hand</span></p>
+      <h2 class="display" data-reveal>Take it.</h2>
+      <p class="reading" data-reveal>A dial in place of a progress bar. Its red hand is the one colour AETHER owns, and the only colour on this page.</p>
+    </div>
+    <canvas id="dial" aria-label="A dial with a red hand you can drag" role="img"></canvas>
+    <div class="hand__time"><span id="dial-now">1:27</span><span class="aside" id="dial-left">−2:29</span></div>
+  </section>
+
+  <section class="metal" id="metal" data-chapter="4" data-finish="black" data-watch>
+    <div class="metal__stage metal__stage--black" aria-hidden="true"></div>
+    <div class="metal__stage metal__stage--silver" aria-hidden="true"></div>
+    <div class="metal__copy">
+      <p class="chapter chapter--left" data-reveal><i>V</i><span class="caps">The metal</span></p>
+      <h2 class="display" data-reveal>Your listening, engraved.</h2>
+      <p class="reading" data-reveal>A charge card of what you play, in anodised black or brushed silver. Any song can have one of its own. Move across it, and the light moves with you.</p>
+      <div class="finish" role="radiogroup" aria-label="Finish" data-reveal>
+        <i class="finish__drop" aria-hidden="true"></i>
+        <button class="caps" role="radio" aria-checked="true" data-pick="black">Black</button>
+        <button class="caps" role="radio" aria-checked="false" data-pick="silver">Silver</button>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="card" id="card" aria-label="A specimen member card">
+        <canvas id="card-metal" aria-hidden="true"></canvas>
+        <div class="card__face">
+          <div class="card__top"><span class="card__logo e">Aether</span><span class="card__tier e q">The Patron</span></div>
+          <div class="medal"><svg viewBox="0 0 156 156" aria-hidden="true"><circle class="r" cx="78" cy="78" r="77"/><circle class="r" cx="78" cy="78" r="70"/><g id="milled"></g></svg><img src="assets/statues/apollo.jpg" alt=""></div>
+          <p class="card__k e q">Most played</p>
+          <p class="card__big e">Orpheus</p>
+          <hr>
+          <ol class="card__rows">
+            <li><span class="e q">02</span><span class="e">Sappho</span><span class="e q">412</span></li>
+            <li><span class="e q">03</span><span class="e">Arion</span><span class="e q">287</span></li>
+            <li><span class="e q">04</span><span class="e">Pindar</span><span class="e q">161</span></li>
+          </ol>
+          <hr>
+          <dl class="card__fig">
+            <div><dd class="e">612 HR</dd><dt class="e q">Of music</dt></div>
+            <div><dd class="e">9204</dd><dt class="e q">Plays</dt></div>
+            <div><dd class="e">86</dd><dt class="e q">Artists</dt></div>
+            <div><dd class="e">41</dd><dt class="e q">Best streak</dt></div>
+          </dl>
+          <div class="card__two">
+            <div><p class="e q">On repeat</p><p class="e">Hymn to Apollo</p></div>
+            <div><p class="e q">Your sound</p><p class="e">Lyric</p></div>
+          </div>
+          <div class="card__foot">
+            <span class="card__holder e">M. Aurelius</span>
+            <div><p class="e q">Member since</p><p class="e">MMXXVI</p></div>
+          </div>
+        </div>
+      </div>
+      <p class="card-note aside">A specimen. Yours is engraved with your own listening.</p>
+    </div>
+  </section>
+
+  <section class="sine" id="sine" data-chapter="5" data-watch>
+    <div class="flutes flutes--l" aria-hidden="true"></div>
+    <div class="flutes flutes--r" aria-hidden="true"></div>
+    <p class="chapter" data-reveal><i>VI</i><span class="caps">The omissions</span></p>
+    <h2 class="display" data-reveal>What has been left&nbsp;out.</h2>
+    <ol class="stones">
+      <li><span class="latin" lang="la">Sine · Praeconiis</span><span class="plain">No advertising.</span></li>
+      <li><span class="latin" lang="la">Sine · Exploratoribus</span><span class="plain">No tracking. No analytics.</span></li>
+      <li><span class="latin" lang="la">Sine · Tributo</span><span class="plain">No paywall. No upsell.</span></li>
+      <li><span class="latin" lang="la">Sine · Mendaciis</span><span class="plain">No claim it can’t prove.</span></li>
+      <li><span class="latin" lang="la">Sine · Inanibus</span><span class="plain">No button without a purpose.</span></li>
+    </ol>
+  </section>
+
+  <section class="few" aria-label="For the few who notice" data-watch>
+    <video id="sea" src="assets/media/sea.mp4" muted loop playsinline preload="none" aria-hidden="true"></video>
+    <p class="few__line" data-reveal>For the few who notice.</p>
+  </section>
+
+  <section class="edition" id="edition" data-chapter="6" data-watch>
+    <div class="edition__sign" data-reveal>
+      <div class="cross" aria-hidden="true"><i class="halo"></i><i class="vg"></i><i class="v"></i><i class="hg"></i><i class="h"></i><i class="core"></i></div>
+      <h2 class="edition__word">Aether</h2>
+      <p class="caps edition__sub">Edition I · MMXXVI</p>
+    </div>
+    <div class="get" data-reveal>
+      <a class="glass get__button caps" href="https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v1.apk">Download for Android</a>
+      <a class="caps get__source link" href="https://github.com/GHOSTxASR/AETHER">Read the source</a>
+    </div>
+    <dl class="cert" data-reveal>
+      <div><dt class="caps">Edition</dt><dd>1.0.0</dd></div>
+      <div><dt class="caps">For</dt><dd>Android 10 or later</dd></div>
+      <div><dt class="caps">Weight</dt><dd>41.6 MB</dd></div>
+      <div><dt class="caps">Telemetry</dt><dd>None</dd></div>
+      <div><dt class="caps">Licence</dt><dd>GPL-3.0</dd></div>
+      <div class="cert__sha"><dt class="caps">SHA-256</dt><dd>6b1e2650f89b625b2640c77edd4a423c<wbr>dbbd3c3a8416c54c4ebe61f9d219ddd7</dd></div>
+    </dl>
+  </section>
+</main>
+
+<footer class="foot">
+  <img class="foot__earth" src="assets/media/earth.jpg" alt="" loading="lazy">
+  <div class="foot__words">
+    <p>AETHER is an independent project, not affiliated with or endorsed by YouTube, Google, Apple or any headphone maker. Music, artwork and trademarks belong to their owners. <a href="https://github.com/GHOSTxASR/AETHER/blob/main/third_party/STATUE_PHOTOS.md">Statue photographs</a> are credited to their photographers.</p>
+    <p class="caps">This page asks nothing of anyone else’s servers</p>
+  </div>
+</footer>
+
+<div class="travel" id="travel" aria-hidden="true"></div>
+
+<nav class="dock glass" id="dock" aria-label="Chapters">
+  <i class="dock__drop" aria-hidden="true"></i>
+  <a href="#name-of-it" aria-label="The name">I</a><a href="#room" aria-label="The room">II</a><a href="#sound" aria-label="The sound">III</a><a href="#hand" aria-label="The hand">IV</a><a href="#metal" aria-label="The metal">V</a><a href="#sine" aria-label="The omissions">VI</a><a href="#edition" aria-label="The edition">VII</a>
+</nav>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

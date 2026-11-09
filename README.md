@@ -30,6 +30,8 @@ AETHER is made the way a fine watch is made: every part considered, nothing ther
 
 It plays all of YouTube Music and your own files through an audio path that reports exactly what it measured, in an interface no other music app looks or moves like.
 
+<p align="center"><a href="https://aether-music-player.vercel.app/">Website</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://github.com/GHOSTxASR/AETHER/releases/latest">Releases</a></p>
+
 ## Download
 
 1. Download **[AETHER v1.apk](https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v1.apk)** from the latest release.

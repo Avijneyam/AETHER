@@ -23,3 +23,7 @@ it: an APK signed with a different key can't install over an existing AETHER.
 4. Publish a GitHub Release tagged `v<versionName>`, with the APK attached and the notes from step 2
    followed by the APK's size and SHA-256. The README's download link names the file, so update it if
    the file's name changes. Never commit APKs.
+
+## The website
+
+Vercel serves `site/` from `main`: the project imports `GHOSTxASR/AETHER` with its Root Directory at the repository root, and `vercel.json` selects the no-build **Other** framework with `site/` as the output directory. Don't host APKs there; the Download links stay GitHub URLs, and the certificate on the page (edition, size, SHA-256) is updated by hand with each release. The production URL is [aether-music-player.vercel.app](https://aether-music-player.vercel.app/).
