@@ -1,5 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.ui.library
 
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import app.aether.ui.common.rememberPageListState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -14,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -109,7 +113,7 @@ fun LibraryScreen() {
             item {
                 // The settings key floats in the shell's top corner, over the frost. Over the room's
                 // name, the keeper's crossed keys.
-                Column(Modifier.fillMaxWidth().statusBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility), horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(Modifier.height(64.dp))
                     Image(painterResource(R.drawable.emblem_keys), contentDescription = null, modifier = Modifier.height(46.dp))
                     Spacer(Modifier.height(14.dp))

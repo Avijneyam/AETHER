@@ -33,6 +33,8 @@ val Script = FontFamily(androidx.compose.ui.text.font.Font(R.font.pinyon_script,
 
 val Serif = FontFamily(
     face(R.font.eb_garamond, 400), face(R.font.eb_garamond, 500), face(R.font.eb_garamond, 600),
+    // The heaviest two only for words sung (Verse), where a lit word has to read at a glance.
+    face(R.font.eb_garamond, 700), face(R.font.eb_garamond, 800),
     face(R.font.eb_garamond_italic, 400, italic = true), face(R.font.eb_garamond_italic, 500, italic = true),
 )
 

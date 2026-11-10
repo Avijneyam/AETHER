@@ -1,5 +1,8 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.ui.settings
 
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -18,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -123,7 +125,7 @@ fun EqualiserScreen() {
     val scope = rememberCoroutineScope()
     val list = rememberPageListState()
     val density = LocalDensity.current
-    val status = WindowInsets.statusBars.getTop(density)
+    val status = WindowInsets.statusBarsIgnoringVisibility.getTop(density)
     val pinAt = status + with(density) { 64.dp.toPx() }
 
     val importing = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->

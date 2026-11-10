@@ -82,6 +82,71 @@ object WordTiming {
         return minOf(window.toDouble(), total * MAX_MS_PER_SYLLABLE)
     }
 
+    /** A word, or one character of a phrase in a script written without spaces, and when it's sung. */
+    data class Unit(val text: String, val startMs: Long)
+
+    /**
+     * What a line is sung in, one piece at a time: its words, except that a phrase in a script written
+     * without spaces (Chinese, Japanese, Thai) comes a character at a time, as it's sung there (a run
+     * of Latin letters inside one stays whole, and punctuation stays with the character before it).
+     * Each piece starts when the provider timed it, where it timed its syllables, or at its share of
+     * its word's time.
+     */
+    fun units(line: LyricsLine, nextStartMs: Long?): List<Unit> {
+        val words = words(line)
+        if (words.isEmpty()) return emptyList()
+        val starts = starts(line, nextStartMs)
+        val end = end(line, nextStartMs)
+        val timed = !isEstimated(line)
+        val out = ArrayList<Unit>(words.size)
+        words.forEachIndexed { i, word ->
+            val start = starts[i]
+            if (word.none(Scripts::unspaced)) {
+                out += Unit(word, start)
+                return@forEachIndexed
+            }
+            val until = starts.getOrNull(i + 1) ?: end
+            val pieces = characters(word)
+            val syllables = if (timed) line.words[i].syllables else emptyList()
+            pieces.forEachIndexed { j, (text, at) ->
+                val own = syllables.firstOrNull { at >= it.startChar && at < it.endChar }?.startMs
+                val share = start + (until - start).coerceAtLeast(0) * j / pieces.size
+                out += Unit(text, maxOf(start, own ?: share))
+            }
+        }
+        return out
+    }
+
+    /** A phrase in pieces: each unspaced character (with punctuation after it), each run of anything else. */
+    private fun characters(word: String): List<Pair<String, Int>> {
+        val out = ArrayList<Pair<String, Int>>()
+        var i = 0
+        while (i < word.length) {
+            val from = i
+            val c = word[i]
+            if (Scripts.unspaced(c) && !punctuation(c)) {
+                i++
+                // A surrogate pair, a combining mark, and any punctuation after it stay with it.
+                while (i < word.length && (Character.isLowSurrogate(word[i]) || Character.getType(word[i]) == Character.NON_SPACING_MARK.toInt() || punctuation(word[i]))) i++
+            } else {
+                while (i < word.length && !(Scripts.unspaced(word[i]) && !punctuation(word[i]))) i++
+            }
+            val piece = word.substring(from, i)
+            if (out.isNotEmpty() && piece.all(::punctuation)) {
+                // Punctuation leading nothing joins what it follows.
+                val (text, at) = out.removeAt(out.lastIndex)
+                out += (text + piece) to at
+            } else out += piece to from
+        }
+        return out
+    }
+
+    private fun punctuation(c: Char): Boolean = when (Character.getType(c).toByte()) {
+        Character.OTHER_PUNCTUATION, Character.START_PUNCTUATION, Character.END_PUNCTUATION, Character.INITIAL_QUOTE_PUNCTUATION,
+        Character.FINAL_QUOTE_PUNCTUATION, Character.DASH_PUNCTUATION, Character.CONNECTOR_PUNCTUATION -> true
+        else -> false
+    }
+
     /** How many of the words of [line] have appeared at [positionMs]. */
     fun shown(starts: List<Long>, positionMs: Long): Int = starts.count { it <= positionMs }
 

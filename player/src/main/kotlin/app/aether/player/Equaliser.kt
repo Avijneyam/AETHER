@@ -22,12 +22,13 @@ import kotlin.math.pow
 private const val SwapSeconds = 0.03
 
 /** The standard renderers with the equaliser in the audio path. */
-internal class ShapedRenderers(context: Context, private val equaliser: EqualiserProcessor) : DefaultRenderersFactory(context) {
+internal class ShapedRenderers(context: Context, private val equaliser: EqualiserProcessor, private val meter: AudioMeter? = null) : DefaultRenderersFactory(context) {
     override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =
         DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
-            .setAudioProcessors(arrayOf(equaliser))
+            // The meter after the equaliser hears what's heard, and passes every byte on as it came.
+            .setAudioProcessors(listOfNotNull(equaliser, meter).toTypedArray())
             .build()
 }
 

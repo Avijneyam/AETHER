@@ -1,5 +1,8 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.ui.home
 
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import app.aether.core.designsystem.art.DotMorphLayer
@@ -29,7 +32,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -95,6 +97,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import app.aether.ui.LocalArrival
 import app.aether.ui.LocalRoomsHidden
+import app.aether.ui.LocalPageSettled
+import app.aether.core.designsystem.theme.FluidSpring
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.withTimeoutOrNull
 import app.aether.ui.common.Colophon
 import app.aether.ui.common.DockClearance
 import androidx.compose.ui.graphics.graphicsLayer
@@ -103,7 +110,6 @@ import app.aether.R
 import app.aether.core.designsystem.theme.Motion
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.ui.platform.LocalWindowInfo
 import app.aether.ui.DockHeight
 import app.aether.ui.FolderLink
@@ -133,11 +139,25 @@ private val Statues = listOf(
     R.drawable.art_god_aphrodite,
     R.drawable.art_god_dionysus,
 )
+/** How long each figure is on show before the next may come: time Listen is seen, not time away. */
 private const val StatueHoldMs = 9_000L
 
+/** How long Listen must have been perfectly still before a figure changes: no touch, no scroll, no page moving. */
+private const val StillBeforeChangeMs = 3_500L
+
+/** How long it must be still again before a change that was interrupted carries on from where it stopped. */
+private const val StillBeforeResumeMs = 1_200L
+
 /** The dots have all landed by 0.94 of this; it has a long, slow end, in which one print becomes the other. */
-private val Reassembles = Motion.fluid(3.6f, 1f, 0.0008f)
-private val Crossfades = Motion.fluid(1.7f, 1f, 0.002f)
+private val Reassembles = FluidSpring(3.6f, 1f)
+private val Crossfades = FluidSpring(1.7f, 1f)
+
+/** 0 to 1 along [spring], [seconds] into it; null once it has come to rest. */
+private fun FluidSpring.progressAt(seconds: Float, rest: Float): Float? {
+    val (offset, velocity) = solve(-1f, 0f, seconds)
+    if (kotlin.math.abs(offset) < rest && kotlin.math.abs(velocity) < rest * 8f) return null
+    return (1f + offset).coerceIn(0f, 1f)
+}
 
 private fun ramp(x: Float, from: Float, to: Float) = ((x - from) / (to - from)).coerceIn(0f, 1f)
 
@@ -205,17 +225,31 @@ fun HomeScreen() {
         arrival.homeScroll = { if (list.firstVisibleItemIndex == 0) list.firstVisibleItemScrollOffset else null }
         onDispose { arrival.homeScroll = null }
     }
-    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 0.dp)) {
+    // A finger anywhere on the page, watched without being taken: the figures wait while one is down.
+    var touching by remember { mutableStateOf(false) }
+    LazyColumn(
+        Modifier.fillMaxSize().pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    touching = event.changes.any { it.pressed }
+                }
+            }
+        },
+        state = list,
+        contentPadding = PaddingValues(bottom = 0.dp),
+    ) {
         // A photograph, not the service's abstract backdrop: the first cover on the page.
-        item(key = "masthead") { Masthead(Modifier.separate(), onScreen = { list.firstVisibleItemIndex == 0 }) }
+        item(key = "masthead") { Masthead(Modifier.separate(), onScreen = { list.firstVisibleItemIndex == 0 }, scrolling = { touching || list.isScrollInProgress }) }
         // Every row keeps its place in the list even while it's empty (the library's rows arrive a
         // frame after the page), so coming back restores the page exactly where it was left.
         item(key = "filters") {
             // Only the masthead can be above it: once it's scrolled off the top, it rests.
             if (filters.isNotEmpty()) Filters(filters, filterTitle, onScreen = { list.firstVisibleItemIndex <= 1 }) { t -> filterTitle = if (filterTitle == t) null else t }
         }
-        // Up where it's seen, and whatever the network does: this is the music that needs none.
-        item(key = "phone") { if (filterTitle == null) app.aether.ui.library.OnThisPhoneShelf() }
+        // Up where it's seen, and whatever the network does: this is the music that needs none, as
+        // albums, the phone's own and what's been kept, each a shelf of its own.
+        item(key = "phone") { if (filterTitle == null) app.aether.ui.library.OfflineShelves() }
         when (load) {
             Load.Loading -> item(key = "loading") { Loading(Modifier.padding(top = 40.dp)) }
             is Load.Failed -> item(key = "failed") { Notice(load.title, load.body, action = "Try again", onAction = retry) }
@@ -271,9 +305,16 @@ fun HomeScreen() {
  * The front page's head: a classical statue, printed as a fine halftone in white ink on black,
  * emerging slowly out of the dark; "Listen", oversized, over the fall of its drapery. Art first, as
  * a jeweller's catalogue opens on a photograph rather than a list.
+ *
+ * The figures change only when nothing else is happening. Each is held for [StatueHoldMs] of being
+ * seen; the next comes only once Listen has been perfectly still for [StillBeforeChangeMs] (no finger,
+ * no scroll, no room or page on the move, the app in front). A touch, a scroll or a switch mid-change
+ * holds it exactly where it is, the dots stopped in the air, asking for no frames, and it carries on
+ * along the same curve once the page is still again. So a change never shares the screen's time with
+ * anything you're doing.
  */
 @Composable
-private fun Masthead(modifier: Modifier = Modifier, onScreen: () -> Boolean) {
+private fun Masthead(modifier: Modifier = Modifier, onScreen: () -> Boolean, scrolling: () -> Boolean) {
     val reduce = LocalReduceMotion.current
     val context = LocalContext.current
     val statues = remember { Statues.map { Artwork.single("android.resource://${context.packageName}/$it", 493, 740) } }
@@ -282,26 +323,58 @@ private fun Masthead(modifier: Modifier = Modifier, onScreen: () -> Boolean) {
     // A DotMorph, typed loosely so that phones before Android 14 never load it. They crossfade.
     var morph by remember { mutableStateOf<Any?>(null) }
     var box by remember { mutableStateOf(IntSize.Zero) }
-    val change = remember { Animatable(0f, 0.0008f) }
+    val change = remember { mutableFloatStateOf(0f) }
     val roomsHidden = LocalRoomsHidden.current
+    val settled = LocalPageSettled.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val resumed by lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val density = LocalDensity.current.density
-    // One after another, resting while Home can't be seen. Everything the change needs is ready before it starts.
+    // Seen: on show, the app in front. Still: seen, and nothing on the screen moving.
+    val seen = { onScreen() && !roomsHidden() && resumed.isAtLeast(Lifecycle.State.RESUMED) && box != IntSize.Zero }
+    val still = { seen() && settled() && !scrolling() }
     if (statues.size > 1 && !reduce) LaunchedEffect(statues) {
         while (true) {
-            delay(StatueHoldMs)
-            snapshotFlow { onScreen() && !roomsHidden() && box != IntSize.Zero }.first { it }
+            // Held: counted only while it can be seen.
+            var held = 0L
+            while (held < StatueHoldMs) {
+                snapshotFlow { seen() }.first { it }
+                val since = SystemClock.uptimeMillis()
+                withTimeoutOrNull(StatueHoldMs - held) { snapshotFlow { seen() }.first { !it } }
+                held += SystemClock.uptimeMillis() - since
+            }
+            stillFor(StillBeforeChangeMs, still)
             val next = (shown + 1) % statues.size
+            // Everything the change needs is ready before it starts, made off the main thread.
             Pictures.fetch(context, statues[next].url(1080), 1080, software = true)
             val dots = if (Build.VERSION.SDK_INT >= 34) dotsBetween(context, Statues[shown], Statues[next], box, density) else null
+            // Making it took a moment: if the page moved meanwhile, it waits for stillness again.
+            if (!still()) stillFor(StillBeforeChangeMs, still)
+            val spring = if (dots != null) Reassembles else Crossfades
+            val rest = if (dots != null) 0.0008f else 0.002f
             try {
-                change.snapTo(0f)
+                change.floatValue = 0f
                 coming = next
                 morph = dots
-                change.animateTo(1f, if (dots != null) Reassembles else Crossfades)
+                // Its own clock, which runs only while the page is still: held, the change asks for nothing.
+                var elapsed = 0f
+                var last = -1L
+                while (true) {
+                    if (!still()) {
+                        last = -1L
+                        stillFor(StillBeforeResumeMs, still)
+                        continue
+                    }
+                    val now = withFrameNanos { it }
+                    if (last >= 0L) elapsed += ((now - last) / 1e9f).coerceAtMost(1f / 30f)
+                    last = now
+                    change.floatValue = spring.progressAt(elapsed, rest) ?: break
+                }
+                change.floatValue = 1f
                 shown = next
             } finally {
                 coming = null
                 morph = null
+                change.floatValue = 0f
             }
         }
     }
@@ -311,7 +384,7 @@ private fun Masthead(modifier: Modifier = Modifier, onScreen: () -> Boolean) {
     // The first screen is one composition: the figure down to the ribbon, the ribbon just above the
     // dock, and nothing half hidden under it. So the figure is as tall as that leaves.
     val window = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
-    val foot = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + DockHeight + RibbonHeight + 12.dp
+    val foot = WindowInsets.navigationBarsIgnoringVisibility.asPaddingValues().calculateBottomPadding() + DockHeight + RibbonHeight + 12.dp
     Box(modifier.fillMaxWidth().height((window - foot).coerceIn(480.dp, 760.dp)).onSizeChanged { box = it }) {
         Box(Modifier.matchParentSize()) {
             key(shown) {
@@ -321,8 +394,8 @@ private fun Masthead(modifier: Modifier = Modifier, onScreen: () -> Boolean) {
                     Modifier.fillMaxSize().graphicsLayer {
                         alpha = emerge.value * 0.92f * when {
                             coming == null -> 1f
-                            morph != null -> 1f - ramp(change.value, 0f, 0.05f)
-                            else -> 1f - change.value
+                            morph != null -> 1f - ramp(change.floatValue, 0f, 0.05f)
+                            else -> 1f - change.floatValue
                         }
                     },
                     sizeHintPx = 1080,
@@ -334,7 +407,7 @@ private fun Masthead(modifier: Modifier = Modifier, onScreen: () -> Boolean) {
                         statues[next],
                         StatuePrint,
                         Modifier.fillMaxSize().graphicsLayer {
-                            alpha = emerge.value * 0.92f * (if (morph != null) ramp(change.value, 0.94f, 1f) else change.value)
+                            alpha = emerge.value * 0.92f * (if (morph != null) ramp(change.floatValue, 0.94f, 1f) else change.floatValue)
                         },
                         sizeHintPx = 1080,
                     )
@@ -343,9 +416,9 @@ private fun Masthead(modifier: Modifier = Modifier, onScreen: () -> Boolean) {
             if (Build.VERSION.SDK_INT >= 34) morph?.let { dots ->
                 DotMorphLayer(
                     dots as DotMorph,
-                    { change.value },
+                    { change.floatValue },
                     Modifier.fillMaxSize().graphicsLayer {
-                        alpha = 0.92f * ramp(change.value, 0f, 0.05f) * (1f - ramp(change.value, 0.94f, 1f))
+                        alpha = 0.92f * ramp(change.floatValue, 0f, 0.05f) * (1f - ramp(change.floatValue, 0.94f, 1f))
                     },
                 )
             }
@@ -459,3 +532,12 @@ private const val Laps = 2000
 /** The ribbon waits this long after a touch, or a flick's end, before drifting on. */
 private const val DriftPauseNanos = 1_600_000_000L
 
+
+/** Returns once [still] has held, without a break, for [ms]; a break starts the wait again. */
+private suspend fun stillFor(ms: Long, still: () -> Boolean) {
+    while (true) {
+        snapshotFlow { still() }.first { it }
+        val broken = withTimeoutOrNull(ms) { snapshotFlow { still() }.first { !it } }
+        if (broken == null) return
+    }
+}

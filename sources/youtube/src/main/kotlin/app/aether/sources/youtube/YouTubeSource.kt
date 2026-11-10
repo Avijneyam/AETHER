@@ -1,6 +1,7 @@
 package app.aether.sources.youtube
 
 import app.aether.core.model.AlbumPage
+import app.aether.core.model.VideoStream
 import app.aether.core.model.ArtistPage
 import app.aether.core.model.Capability
 import app.aether.core.model.Charts
@@ -96,6 +97,8 @@ class YouTubeSource(
         yt.related(destination.toYt()).toOutcome { shelves -> shelves.map { it.toSection() } }
 
     override suspend fun stream(id: MediaId, efficient: Boolean): Outcome<Stream> = streams.resolve(id.key, efficient)
+
+    override suspend fun video(id: MediaId, maxHeight: Int): Outcome<VideoStream> = streams.video(id.key, maxHeight)
 
     override fun invalidate(id: MediaId) = streams.forget(id.key)
 }

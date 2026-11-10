@@ -1,5 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.core.designsystem.component
 
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -11,7 +16,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -295,7 +299,7 @@ fun DragSheet(state: DragState, height: Dp = 620.dp, onClosed: () -> Unit = {}, 
                     .dragsOpen(state),
             ) {
                 Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) { Grabber(state) }
-                Column(Modifier.fillMaxWidth().height(height - 32.dp).navigationBarsPadding(), content = content)
+                Column(Modifier.fillMaxWidth().height(height - 32.dp).windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility), content = content)
             }
         }
     }

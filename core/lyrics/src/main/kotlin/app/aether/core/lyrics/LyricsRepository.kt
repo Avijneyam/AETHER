@@ -37,7 +37,7 @@ class LyricsRepository(
         val key = keyOf(request)
         cache.read(key)?.let { entry ->
             if (now() - entry.storedAt < (if (entry.lyrics != null) foundTtlMs else missTtlMs)) {
-                return entry.lyrics?.let { LyricsResult.Found(shown(it, request), provider.attribution) } ?: LyricsResult.NotFound
+                return entry.lyrics?.let { LyricsResult.Found(shown(it, request), entry.credit ?: provider.attribution) } ?: LyricsResult.NotFound
             }
         }
         if (!consent()) return LyricsResult.NeedsConsent
@@ -49,8 +49,9 @@ class LyricsRepository(
             when (val answer = provider.lookup(request)) {
                 is ProviderAnswer.Found -> {
                     // The provider's answer is kept as it came; what's shown is formatted for the player.
-                    cache.write(key, LyricsCache.Entry(now(), answer.lyrics))
-                    LyricsResult.Found(shown(answer.lyrics, request), provider.attribution)
+                    val credit = answer.credit ?: provider.attribution
+                    cache.write(key, LyricsCache.Entry(now(), answer.lyrics, credit))
+                    LyricsResult.Found(shown(answer.lyrics, request), credit)
                 }
                 ProviderAnswer.NotFound -> {
                     cache.write(key, LyricsCache.Entry(now(), null))
@@ -92,12 +93,13 @@ class LyricsRepository(
     }
 }
 
-private const val KEY_VERSION = "v2"
+// v3: several libraries are asked, and words come timed: what was kept from LRCLIB alone is asked again.
+private const val KEY_VERSION = "v3"
 
 /** Where answers are kept between runs. */
 interface LyricsCache {
-    /** [lyrics] null means "the provider has none". */
-    data class Entry(val storedAt: Long, val lyrics: Lyrics?)
+    /** [lyrics] null means "the provider has none"; [credit], who the words came from. */
+    data class Entry(val storedAt: Long, val lyrics: Lyrics?, val credit: LyricsAttribution? = null)
 
     fun read(key: String): Entry?
     fun write(key: String, entry: Entry)
@@ -130,6 +132,43 @@ class FileLyricsCache(private val directory: File, private val maxEntries: Int =
         /** Per line: its words' start times (empty when the provider times whole lines only). */
         val wordTimes: List<List<Long>> = emptyList(),
         val wordTexts: List<List<String>> = emptyList(),
+        /** The lines whole (word ends, syllables, backing vocals, duet sides), in entries written since. */
+        val rich: List<StoredLine>? = null,
+        val creditName: String? = null,
+        val creditUrl: String? = null,
+    )
+
+    @Serializable
+    private data class StoredLine(
+        val s: Long,
+        val t: String,
+        val e: Long = -1,
+        val w: List<StoredWord> = emptyList(),
+        val b: StoredLine? = null,
+        val o: Boolean = false,
+    )
+
+    @Serializable
+    private data class StoredWord(val s: Long, val t: String, val e: Long = -1, val y: List<Long> = emptyList())
+
+    private fun StoredLine.line(): LyricsLine = LyricsLine(
+        startMs = s,
+        text = t,
+        endMs = e.takeIf { it >= 0 },
+        words = w.map { word ->
+            LyricsWord(word.s, word.t, word.e.takeIf { it >= 0 }, word.y.chunked(4).filter { it.size == 4 }.map { (a, b, c, d) -> LyricsSyllable(a, b, c.toInt(), d.toInt()) })
+        },
+        background = b?.line(),
+        opposite = o,
+    )
+
+    private fun LyricsLine.stored(): StoredLine = StoredLine(
+        s = startMs,
+        t = text,
+        e = endMs ?: -1,
+        w = words.map { word -> StoredWord(word.startMs, word.text, word.endMs ?: -1, word.syllables.flatMap { listOf(it.startMs, it.endMs, it.startChar.toLong(), it.endChar.toLong()) }) },
+        b = background?.stored(),
+        o = opposite,
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -147,7 +186,7 @@ class FileLyricsCache(private val directory: File, private val maxEntries: Int =
             return null
         }
         val lyrics = when (stored.kind) {
-            "synced" -> stored.lines.zip(stored.times).mapIndexed { i, (text, ms) ->
+            "synced" -> stored.rich?.map { it.line() }?.takeIf { it.isNotEmpty() }?.let(Lyrics::Synced) ?: stored.lines.zip(stored.times).mapIndexed { i, (text, ms) ->
                 val words = stored.wordTimes.getOrNull(i).orEmpty().zip(stored.wordTexts.getOrNull(i).orEmpty()) { t, w -> LyricsWord(t, w) }
                 LyricsLine(ms, text, endMs = stored.ends.getOrNull(i)?.takeIf { it >= 0 }, words = words)
             }.takeIf { it.isNotEmpty() }?.let(Lyrics::Synced)
@@ -155,7 +194,8 @@ class FileLyricsCache(private val directory: File, private val maxEntries: Int =
             "instrumental" -> Lyrics.Instrumental
             else -> null
         }
-        return LyricsCache.Entry(stored.storedAt, lyrics).also { memory[key] = it }
+        val credit = stored.creditName?.let { LyricsAttribution(it, stored.creditUrl.orEmpty()) }
+        return LyricsCache.Entry(stored.storedAt, lyrics, credit).also { memory[key] = it }
     }
 
     @Synchronized
@@ -171,11 +211,12 @@ class FileLyricsCache(private val directory: File, private val maxEntries: Int =
                 ends = l.lines.map { it.endMs ?: -1L },
                 wordTimes = l.lines.map { line -> line.words.map { it.startMs } },
                 wordTexts = l.lines.map { line -> line.words.map { it.text } },
+                rich = l.lines.map { it.stored() },
             )
             is Lyrics.Plain -> Stored(entry.storedAt, "plain", lines = l.lines)
             Lyrics.Instrumental -> Stored(entry.storedAt, "instrumental")
             null -> Stored(entry.storedAt, "none")
-        }
+        }.copy(creditName = entry.credit?.name, creditUrl = entry.credit?.url)
         runCatching {
             directory.mkdirs()
             val partial = File(directory, file.name + ".partial")

@@ -27,8 +27,8 @@ android {
         minSdk = 29
         targetSdk = 36
         // major * 1,000,000 + minor * 1,000 + patch, so it only ever rises.
-        versionCode = 1_000_000
-        versionName = "1.0.0"
+        versionCode = 2_000_000
+        versionName = "2.0.0"
     }
     signingConfigs {
         if (releaseStore != null) {
@@ -96,5 +96,11 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
+    // The releases GitHub lists, for AETHER's own updates.
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.profileinstaller)
+
+    // Verse's line model and the offline albums (./gradlew :app:testDebugUnitTest).
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
 }

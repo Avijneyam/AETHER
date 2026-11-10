@@ -110,7 +110,7 @@ object LyricsFormatter {
             val pieceWords = if (timed) line.words.subList(index, index + piece.size) else emptyList()
             index += piece.size
             t += piece.size * step
-            LyricsLine(start, piece.joinToString(" "), words = pieceWords)
+            LyricsLine(start, piece.joinToString(" "), words = pieceWords, opposite = line.opposite)
         }
     }
 
@@ -168,10 +168,17 @@ object LyricsFormatter {
         return (t.endsWith(":") || (t.startsWith("(") && t.endsWith(")"))) && LABEL.containsMatchIn(words) && words.split(' ').size <= 4
     }
 
-    private fun LyricsLine.scaled(factor: Double) = copy(
+    private fun LyricsLine.scaled(factor: Double): LyricsLine = copy(
         startMs = (startMs * factor).roundToLong(),
         endMs = endMs?.let { (it * factor).roundToLong() },
-        words = words.map { it.copy(startMs = (it.startMs * factor).roundToLong()) },
+        words = words.map { w ->
+            w.copy(
+                startMs = (w.startMs * factor).roundToLong(),
+                endMs = w.endMs?.let { (it * factor).roundToLong() },
+                syllables = w.syllables.map { it.copy(startMs = (it.startMs * factor).roundToLong(), endMs = (it.endMs * factor).roundToLong()) },
+            )
+        },
+        background = background?.scaled(factor),
     )
 
     private val LABEL = Regex("""^(intro|outro|verse|chorus|pre-chorus|prechorus|post-chorus|hook|bridge|refrain|interlude|break|instrumental)\b""")

@@ -1,5 +1,6 @@
 package app.aether.ui.settings
 
+import app.aether.player.CrossfadeRules
 import app.aether.ui.common.rememberPageListState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -66,6 +67,7 @@ import app.aether.ui.common.Colophon
 import androidx.compose.ui.platform.LocalContext
 import app.aether.ui.account.SignInActivity
 import app.aether.core.model.Outcome
+import app.aether.core.model.SourceError
 import app.aether.sources.addon.AddonSource
 import app.aether.ui.common.NameDialog
 
@@ -88,8 +90,14 @@ fun SettingsScreen() {
     val timedLyrics by settings.timedLyrics.collectAsStateWithLifecycle()
     val artistArt by settings.artistArt.collectAsStateWithLifecycle()
     val lyricsStyle by settings.lyricsStyle.collectAsStateWithLifecycle()
+    val crossfade by settings.crossfade.collectAsStateWithLifecycle()
+    val fullScreen by settings.fullScreen.collectAsStateWithLifecycle()
     val songVideo by settings.songVideo.collectAsStateWithLifecycle()
+    val musicVideo by settings.musicVideo.collectAsStateWithLifecycle()
+    val romanise by settings.romanise.collectAsStateWithLifecycle()
+    val sourcesOff by settings.lyricsSourcesOff.collectAsStateWithLifecycle()
     val eqShaping by container.equaliser.shaping.collectAsStateWithLifecycle()
+    val updatesAutomatic by container.updates.automatic.collectAsStateWithLifecycle()
     val phoneFolders by container.local.folders.collectAsStateWithLifecycle()
     val phoneChoice by container.local.selection.collectAsStateWithLifecycle()
     val actions = LocalActions.current
@@ -98,8 +106,19 @@ fun SettingsScreen() {
     val sources by container.sources.added.collectAsStateWithLifecycle()
     val addresses by container.settings.addons.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf(false) }
+    var connecting by remember { mutableStateOf(false) }
     var addError by remember { mutableStateOf<String?>(null) }
+    val choices by settings.addonChoices.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lyricsFolders by settings.lyricsFolders.collectAsStateWithLifecycle()
+    // Android's own folder picker: the folder chosen is read, nothing else, until it's removed here.
+    val pickFolder = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(tree, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            settings.addLyricsFolder(tree.toString())
+            scope.launch { container.localLyrics.forget() }
+        }
+    }
 
     LazyColumn(Modifier.fillMaxSize(), state = rememberPageListState(), contentPadding = PaddingValues(bottom = 0.dp)) {
         item { BackLine() }
@@ -134,21 +153,20 @@ fun SettingsScreen() {
         }
         item {
             Section("II", "Sources") {
-                Words("Your own sources", "Add a source by its address: your own server or an open library that speaks the addon protocol. AETHER plays open media only, and ships no sources.", Modifier.padding(vertical = 18.dp))
+                Words(
+                    "Your own sources",
+                    "Add a source by its address: your own server, or a library that speaks the addon protocol BitChord and LastWave use. For a song from YouTube Music, your sources are asked first for an exact copy (the same recording, the same length); the first that has one plays it, lossless when it is, and YouTube Music plays whatever they don't have. AETHER plays open media only, and ships no sources.",
+                    Modifier.padding(vertical = 18.dp),
+                )
                 addresses.forEach { address ->
-                    val connected = sources.firstOrNull { (it as? AddonSource)?.address == address }
-                    Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Words(connected?.name ?: "Not reachable", address, Modifier.weight(1f))
-                        Spacer(Modifier.width(18.dp))
-                        GlassPill("Remove", small = true, onClick = {
-                            container.settings.removeAddon(address)
-                            container.sources.unregister(AddonSource.idFor(address))
-                        })
+                    val connected = sources.firstOrNull { (it as? AddonSource)?.address == address } as? AddonSource
+                    AddedSource(address, connected, choices[address].orEmpty(), onChoose = { key, value -> settings.setAddonChoice(address, key, value) }) {
+                        settings.removeAddon(address)
+                        container.sources.unregister(AddonSource.idFor(address))
                     }
-                    Rule()
                 }
                 addError?.let { Txt(it, Type.Meta, color = Ink.Grey, modifier = Modifier.padding(top = 12.dp)) }
-                GlassPill("Add a source", icon = Glyph.Plus, onClick = { adding = true }, modifier = Modifier.padding(vertical = 18.dp))
+                GlassPill(if (connecting) "Asking…" else "Add a source", icon = Glyph.Plus, onClick = { if (!connecting) adding = true }, modifier = Modifier.padding(vertical = 18.dp))
                 Rule()
             }
         }
@@ -165,11 +183,39 @@ fun SettingsScreen() {
                     GlassPill("Choose", small = true, trailingIcon = Glyph.Forward, onClick = { actions.nav.open(Route.MusicFolders()) })
                 }
                 Rule()
+                Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Words(
+                        "Lyrics files",
+                        if (lyricsFolders.isEmpty()) "A song's words are read from its own file. To read .lrc files beside your songs (Song.lrc for Song.flac), let AETHER read the folder they're in."
+                        else "The .lrc files in ${lyricsFolders.joinToString { folderName(it) }}, for the songs beside them, and the words inside every song's own file.",
+                        Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(18.dp))
+                    GlassPill(if (lyricsFolders.isEmpty()) "Choose" else "Add", small = true, onClick = { pickFolder.launch(null) })
+                }
+                lyricsFolders.forEach { tree ->
+                    Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Txt(folderName(tree), Type.Meta, color = Ink.Grey, modifier = Modifier.weight(1f))
+                        GlassPill("Remove", small = true, onClick = {
+                            runCatching { context.contentResolver.releasePersistableUriPermission(android.net.Uri.parse(tree), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                            settings.removeLyricsFolder(tree)
+                            scope.launch { container.localLyrics.forget() }
+                        })
+                    }
+                }
+                Rule()
             }
         }
         item {
             Section("IV", "Sound") {
                 Toggle("Data saver", "Lower-bitrate streams for metered networks. Off plays the best the source has.", efficient) { settings.setEfficient(!efficient) }
+                Choice(
+                    title = "Crossfade",
+                    detail = "The end of one song and the start of the next play together for this many seconds, one going down as the other comes up. Never between an album's songs that run into each other, nor while a DAC plays bit-perfect.",
+                    options = CrossfadeRules.Choices.map { if (it == 0) "Off" else "$it" },
+                    selected = CrossfadeRules.Choices.indexOf(crossfade).coerceAtLeast(0),
+                    onSelect = { settings.setCrossfade(CrossfadeRules.Choices[it]) },
+                )
                 Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Words(
                         "Equaliser",
@@ -186,6 +232,7 @@ fun SettingsScreen() {
             Section("V", "Feel") {
                 Toggle("Haptics", "A light touch you can feel on the actions that matter.", haptics) { settings.setHaptics(!haptics) }
                 Toggle("Reduce motion", "No stretch, ripples or drifting. Also follows your phone's setting.", reduce) { settings.setReduceMotion(!reduce) }
+                Toggle("Full screen", "Android's bars hidden, the clock above and the keys below, so the page has the whole screen. A swipe from the edge brings them for a moment.", fullScreen) { settings.setFullScreen(!fullScreen) }
                 Choice(
                     title = "Glass",
                     detail = "Simple is PODIUM's glass: frosted, lit at the rim, the screen's edges fading to black. Liquid bends light at every edge and frosts the screen's edges live; it asks much more of the phone.",
@@ -199,21 +246,46 @@ fun SettingsScreen() {
             Section("VI", "Now Playing") {
                 Toggle(
                     "Timed lyrics",
-                    "Words in time with the song, from LRCLIB, an open library of lyrics. Asking it sends a song's title, artist and length; nothing else. Off, the music service's own words are shown.",
+                    "Words in time with the song, word by word where a library has them, from the lyrics libraries below. They're asked together and the best answer is kept; asking sends a song's title, artist, album and length, nothing else. Off, the music service's own words are shown.",
                     timedLyrics,
                 ) { settings.setTimedLyrics(!timedLyrics) }
+                if (timedLyrics) {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
+                        Txt("Libraries", Type.Label, color = Ink.Grey, upper = true)
+                        Spacer(Modifier.height(4.dp))
+                        container.lyricsLibraries.forEach { library ->
+                            val on = library.id !in sourcesOff
+                            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Words(library.attribution.name, LibraryNotes[library.id], Modifier.weight(1f))
+                                Spacer(Modifier.width(16.dp))
+                                GlassSegments(listOf("Off", "On"), if (on) 1 else 0, { if ((it == 1) != on) settings.setLyricsSource(library.id, !on) })
+                            }
+                        }
+                    }
+                    Rule()
+                }
                 Choice(
                     title = "How lyrics are drawn",
-                    detail = "Constellations sets each word as a star in a night sky. Line writes the song by hand, as one unbroken line.",
-                    options = listOf("Constellations", "Line"),
-                    selected = lyricsStyle.coerceIn(0, 1),
-                    onSelect = { settings.setLyricsStyle(it) },
+                    detail = "Verse sets the song as a page that's sung, each word lighting as it's sung; touch a line to go to it. Constellations sets each word as a star in a night sky. Line writes the song by hand, as one unbroken line.",
+                    options = listOf("Verse", "Constellations", "Line"),
+                    selected = when (lyricsStyle) { 2 -> 0; 1 -> 2; else -> 1 },
+                    onSelect = { settings.setLyricsStyle(when (it) { 0 -> 2; 2 -> 1; else -> 0 }) },
                 )
+                Toggle(
+                    "Words in Latin letters",
+                    "Lyrics in another script are given in Latin letters too: Korean as it's said, Chinese in pinyin, Japanese where it's in kana, and the rest. Worked out on the phone; nothing is sent. The Latin key on the lyrics turns it off and on.",
+                    romanise,
+                ) { settings.setRomanise(!romanise) }
                 Toggle(
                     "Song video",
                     "The cover's short film, in colour, for the albums Apple Music has one for. The cover shows first and the film takes over once it has loaded; on a slow connection or the data saver it isn't loaded at all. Asking sends the song's title and artist; nothing else. Needs Artist and album art.",
                     songVideo,
                 ) { settings.setSongVideo(!songVideo) }
+                Toggle(
+                    "Music videos",
+                    "A video (an official music video, or one someone uploaded) plays as video in place of its cover, its pictures in step with its sound: up to 1080p on Wi-Fi, 720p on mobile data, 480p on the data saver. The video key on Now Playing switches it too. What you hear is the same either way.",
+                    musicVideo,
+                ) { settings.setMusicVideo(!musicVideo) }
                 Choice(
                     title = "The cover",
                     detail = "How the print is shown. Touch the cover on Now Playing to change it at any time.",
@@ -239,14 +311,35 @@ fun SettingsScreen() {
             }
         }
         item {
-            Section("IX", "Privacy") {
-                Paragraph("AETHER has no analytics and no accounts. Your likes, playlists and history stay on this phone. The only requests it makes are the ones that load pages and play music, and, if you leave them on, the ones for timed lyrics, song video and artist and album art. The music on the phone is read on the phone.")
+            Section("IX", "Software update") {
+                if (container.updates.looksByItself) {
+                    Toggle(
+                        "Look for updates",
+                        "When AETHER opens, it asks GitHub, at most every few hours, whether there's a newer release, and offers it. Nothing about you goes with the question. The update is checked against the release and signed like your AETHER before Android is asked to install it.",
+                        updatesAutomatic,
+                    ) { container.updates.setAutomatic(!updatesAutomatic) }
+                }
+                Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Words(
+                        "AETHER ${container.updates.version}",
+                        if (container.updates.looksByItself) "The version on this phone." else "A test build: it looks for updates only when asked, and a release installs from GitHub.",
+                        Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(18.dp))
+                    GlassPill("Check now", small = true, onClick = { container.updates.checkNow() })
+                }
+                Rule()
             }
         }
         item {
-            Section("X", "About") {
+            Section("X", "Privacy") {
+                Paragraph("AETHER has no analytics and no accounts. Your likes, playlists and history stay on this phone. The only requests it makes are the ones that load pages and play music, and, if you leave them on, the ones for timed lyrics, song video, artist and album art, and a newer AETHER. The music on the phone is read on the phone.")
+            }
+        }
+        item {
+            Section("XI", "About") {
                 Spacer(Modifier.height(16.dp))
-                Txt("AETHER 0.1", Type.TitleSmall)
+                Txt("AETHER ${container.updates.version}", Type.TitleSmall)
                 Paragraph(
                     "Free software under the GNU GPL v3. Built on PODIUM's, LastWave's, BitChord's and NewPipe's work, Media3, Coil and Kyant's Backdrop; set in Pinyon Script, EB Garamond, Montserrat and JetBrains Mono (SIL Open Font License).",
                     top = 6.dp,
@@ -255,20 +348,84 @@ fun SettingsScreen() {
         }
         item(key = "colophon") { Colophon() }
     }
-    if (adding) NameDialog("Source address", "https://", onDone = { address ->
+    if (adding) NameDialog("Source address", "https://", onDone = { typed ->
         adding = false
+        val address = typed.trim()
+        if (address in addresses) {
+            addError = "That source is already in your list."
+            return@NameDialog
+        }
+        connecting = true
         scope.launch {
-            when (val r = AddonSource.connect(address, container.http)) {
+            when (val r = AddonSource.connect(address, container.http) { settings.addonChoices(address) }) {
                 is Outcome.Ok -> {
                     container.sources.register(r.value)
-                    container.settings.addAddon(address)
+                    settings.addAddon(address)
                     addError = null
                 }
-                is Outcome.Err -> addError = "That address didn't answer as a source."
+                is Outcome.Err -> addError = when (val e = r.error) {
+                    is SourceError.NotPlayable -> e.reason ?: "That address didn't answer as a source."
+                    SourceError.Network, SourceError.Offline -> "That address didn't answer. Check it, and your connection, and try again."
+                    is SourceError.Server -> "That address answered, but not as a source${e.code?.let { " (it said $it)" }.orEmpty()}."
+                    else -> "That address didn't answer as a source."
+                }
             }
+            connecting = false
         }
     }, onDismiss = { adding = false })
 }
+
+/**
+ * A source the listener added: its name, where it is (the host alone: the rest of an address can
+ * carry their token), how it's doing, and each setting it declares as a choice on the bar of glass.
+ */
+@Composable
+private fun AddedSource(address: String, source: AddonSource?, chosen: Map<String, String>, onChoose: (String, String) -> Unit, onRemove: () -> Unit) {
+    val host = remember(address) { AddonSource.base(address)?.host ?: address }
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        val state = when {
+            source == null -> "Not reachable just now, at $host."
+            source.trouble != null -> "$host. Resting: ${source.trouble}"
+            else -> "$host. Asked first for exact copies of songs from YouTube Music."
+        }
+        Words(source?.name ?: "A source", state, Modifier.weight(1f))
+        Spacer(Modifier.width(18.dp))
+        GlassPill("Remove", small = true, onClick = onRemove)
+    }
+    source?.manifest?.settings?.filter { it.type != app.aether.sources.addon.AddonSetting.Type.TEXT }?.forEach { setting ->
+        val options = when (setting.type) {
+            app.aether.sources.addon.AddonSetting.Type.SELECT -> setting.options
+            else -> listOf(app.aether.sources.addon.AddonSetting.Option("Off", "false"), app.aether.sources.addon.AddonSetting.Option("On", "true"))
+        }.take(4)
+        if (options.size < 2) return@forEach
+        // The quality a source is asked for is its best unless the listener chose another.
+        val value = chosen[setting.key]?.takeIf { v -> options.any { it.value == v } }
+            ?: (if (setting.key == app.aether.sources.addon.AddonManifest.QUALITY) options.first().value else setting.accept(null))
+        Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            Txt(setting.label, Type.Label, color = Ink.Grey, upper = true)
+            Spacer(Modifier.height(10.dp))
+            GlassSegments(options.map { it.label }, options.indexOfFirst { it.value == value }.coerceAtLeast(0), { i -> onChoose(setting.key, options[i].value) })
+        }
+    }
+    Rule()
+}
+
+/** A folder the listener chose, by its path below the storage's root ("Music/Lyrics"). */
+private fun folderName(tree: String): String = runCatching {
+    val id = android.provider.DocumentsContract.getTreeDocumentId(android.net.Uri.parse(tree))
+    id.substringAfter(':').ifBlank { "the phone's storage" }
+}.getOrDefault("a folder")
+
+/** What each lyrics library is, in a line. */
+private val LibraryNotes = mapOf(
+    "lrcred" to "Apple Music's timings, syllable by syllable, found by the recording.",
+    "bini" to "The same timings, matched on the recording itself.",
+    "betterlyrics" to "Apple Music's timings, word by word, from the YouTube Music extension's library.",
+    "lyricsplus" to "Syllable by syllable from several catalogues, on community mirrors.",
+    "unison" to "Lyrics written and voted on by listeners.",
+    "lrclib" to "An open library of lyrics, timed by the line.",
+    "kugou" to "Timed by the line, and strong outside the English-speaking catalogue.",
+)
 
 /** A numbered head: the numeral in italic, the name in spaced capitals, a hairline beneath. */
 @Composable

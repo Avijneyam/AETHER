@@ -10,17 +10,39 @@ package app.aether.core.lyrics
 /**
  * One line of synced lyrics: sung from [startMs]. An empty [text] is a gap between lines.
  * [endMs] is when the line ends, when the provider says (otherwise the next line's start bounds it);
- * [words] are the provider's own word times (enhanced LRC), empty when it only times whole lines.
+ * [words] are the provider's own word times (enhanced LRC, Apple's TTML), empty when it only times
+ * whole lines: when there are any, there is one for each of the line's words as spaces divide it.
+ *
+ * [background] is the answering vocal, the "(ooh)" a second voice sings over the lead: a line of its
+ * own, with its own times, never nested. [opposite] is the second voice of a duet, set from the
+ * other side, as Apple sets it.
  */
 data class LyricsLine(
     val startMs: Long,
     val text: String,
     val endMs: Long? = null,
     val words: List<LyricsWord> = emptyList(),
+    val background: LyricsLine? = null,
+    val opposite: Boolean = false,
+) {
+    /** When the singing of this line stops, by its own times: its last word's end, or its own end. */
+    val sungUntilMs: Long? get() = words.lastOrNull()?.endMs ?: endMs
+}
+
+/**
+ * A word of a line, sung from [startMs] (to [endMs], when the provider says), only from a provider
+ * that times words. A long word may come in [syllables], each a stretch of its [text] with times
+ * of its own ("e" and "nough"); empty when the word is timed whole.
+ */
+data class LyricsWord(
+    val startMs: Long,
+    val text: String,
+    val endMs: Long? = null,
+    val syllables: List<LyricsSyllable> = emptyList(),
 )
 
-/** A word of a line, sung from [startMs] — only from a provider that times words. */
-data class LyricsWord(val startMs: Long, val text: String)
+/** One separately timed piece of a word: its characters [startChar] until [endChar], sung from [startMs] to [endMs]. */
+data class LyricsSyllable(val startMs: Long, val endMs: Long, val startChar: Int, val endChar: Int)
 
 sealed interface Lyrics {
     /**
@@ -31,6 +53,9 @@ sealed interface Lyrics {
         init {
             require(lines.isNotEmpty()) { "synced lyrics need lines" }
         }
+
+        /** Whether the provider timed the words, not only the lines. */
+        val wordTimed: Boolean get() = !estimated && lines.any { it.words.isNotEmpty() }
     }
 
     /** Words without times: shown as they are, moved through by the listener. Never empty. */
@@ -52,6 +77,8 @@ data class LyricsRequest(
     val artist: String,
     val album: String? = null,
     val durationMs: Long? = null,
+    /** The recording's code, when its source knows it (a file's tag): some libraries file by it. */
+    val isrc: String? = null,
 )
 
 /** The answer the screen shows. */

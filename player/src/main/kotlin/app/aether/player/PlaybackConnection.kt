@@ -183,7 +183,8 @@ class PlaybackConnection(private val context: Context, private val scope: Corout
                 Player.REPEAT_MODE_ONE -> RepeatMode.ONE
                 else -> RepeatMode.OFF
             },
-            heard = heard(c.currentTracks),
+            // Carried over to a copy mid-song, what's heard is the copy, measured by its own player.
+            heard = route.getBundle(EXTRA_CARRIED)?.heardFormat() ?: c.currentTracks.heardFormat(),
             error = c.playerError?.let { describe(it) },
             outputDevice = route.getString(EXTRA_OUTPUT),
             bitPerfect = route.getBoolean(EXTRA_BIT_PERFECT, false),
@@ -203,27 +204,6 @@ class PlaybackConnection(private val context: Context, private val scope: Corout
                 }
             }
         }
-    }
-
-    private fun heard(tracks: Tracks): HeardFormat? {
-        val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected } ?: return null
-        val format = (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { group.getTrackFormat(it) } ?: return null
-        val mime = format.sampleMimeType
-        val lossless = mime in setOf(MimeTypes.AUDIO_FLAC, MimeTypes.AUDIO_ALAC, MimeTypes.AUDIO_RAW, MimeTypes.AUDIO_WAV)
-        val depth = when (format.pcmEncoding) {
-            C.ENCODING_PCM_16BIT -> 16
-            C.ENCODING_PCM_24BIT -> 24
-            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 32
-            else -> null
-        }
-        return HeardFormat(
-            codec = mime?.substringAfter('/')?.uppercase(),
-            sampleRateHz = format.sampleRate.takeIf { it != androidx.media3.common.Format.NO_VALUE },
-            channels = format.channelCount.takeIf { it != androidx.media3.common.Format.NO_VALUE },
-            bitDepth = if (lossless) depth else null,
-            bitrateKbps = format.bitrate.takeIf { it != androidx.media3.common.Format.NO_VALUE && it > 0 }?.let { it / 1000 },
-            lossless = lossless,
-        )
     }
 
     private fun describe(error: PlaybackException): String {
@@ -248,3 +228,44 @@ class PlaybackConnection(private val context: Context, private val scope: Corout
         override fun onTimelineChanged(timeline: Timeline, reason: Int) = Unit
     }
 }
+
+/** What the decoder of [this]'s selected audio says it is: measured, never claimed. */
+internal fun Tracks.heardFormat(): HeardFormat? {
+    val group = groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected } ?: return null
+    val format = (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { group.getTrackFormat(it) } ?: return null
+    val mime = format.sampleMimeType
+    val lossless = mime in setOf(MimeTypes.AUDIO_FLAC, MimeTypes.AUDIO_ALAC, MimeTypes.AUDIO_RAW, MimeTypes.AUDIO_WAV)
+    val depth = when (format.pcmEncoding) {
+        C.ENCODING_PCM_16BIT -> 16
+        C.ENCODING_PCM_24BIT -> 24
+        C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 32
+        else -> null
+    }
+    return HeardFormat(
+        codec = mime?.substringAfter('/')?.uppercase(),
+        sampleRateHz = format.sampleRate.takeIf { it != androidx.media3.common.Format.NO_VALUE },
+        channels = format.channelCount.takeIf { it != androidx.media3.common.Format.NO_VALUE },
+        bitDepth = if (lossless) depth else null,
+        bitrateKbps = format.bitrate.takeIf { it != androidx.media3.common.Format.NO_VALUE && it > 0 }?.let { it / 1000 },
+        lossless = lossless,
+    )
+}
+
+/** A measured format, carried across from the service in its session's extras. */
+internal fun HeardFormat.toBundle(): android.os.Bundle = android.os.Bundle().apply {
+    codec?.let { putString("codec", it) }
+    sampleRateHz?.let { putInt("rate", it) }
+    channels?.let { putInt("channels", it) }
+    bitDepth?.let { putInt("depth", it) }
+    bitrateKbps?.let { putInt("kbps", it) }
+    putBoolean("lossless", lossless)
+}
+
+internal fun android.os.Bundle.heardFormat(): HeardFormat = HeardFormat(
+    codec = getString("codec"),
+    sampleRateHz = getInt("rate", 0).takeIf { it > 0 },
+    channels = getInt("channels", 0).takeIf { it > 0 },
+    bitDepth = getInt("depth", 0).takeIf { it > 0 },
+    bitrateKbps = getInt("kbps", 0).takeIf { it > 0 },
+    lossless = getBoolean("lossless", false),
+)

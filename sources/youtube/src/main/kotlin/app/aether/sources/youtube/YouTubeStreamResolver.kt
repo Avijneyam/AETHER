@@ -3,6 +3,7 @@ package app.aether.sources.youtube
 import app.aether.core.model.Outcome
 import app.aether.core.model.SourceError
 import app.aether.core.model.Stream
+import app.aether.core.model.VideoStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -44,6 +45,12 @@ class YouTubeStreamResolver(
     private val visitors = ConcurrentHashMap<String, Pair<String, Long>>()
     private val resolved = ConcurrentHashMap<String, Stream>()
 
+    /** Which app and format each resolved stream came from ("VISIONOS:251"). */
+    private val servedVia = ConcurrentHashMap<String, String>()
+
+    /** Per song, the app and format that failed it lately, and since when. */
+    private val refused = ConcurrentHashMap<String, Pair<Set<String>, Long>>()
+
     /** The app that served last goes first next time. */
     @Volatile private var lastServed: String? = null
 
@@ -64,6 +71,7 @@ class YouTubeStreamResolver(
                 is Outcome.Ok -> {
                     lastServed = app.name
                     resolved[key] = outcome.value
+                    servedVia[key] = "${app.name}:${outcome.value.cacheKey?.substringAfterLast(':')}"
                     return@withContext outcome
                 }
                 is Outcome.Err -> {
@@ -77,8 +85,166 @@ class YouTubeStreamResolver(
         Outcome.Err(verdict)
     }
 
+    /** For the live check: what each app answers for [videoId], in the walk's order. */
+    internal suspend fun diagnose(videoId: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        APPS.map { app ->
+            app.name to try {
+                when (val r = tryApp(app, videoId, efficient = false)) {
+                    is Outcome.Ok -> "serves ${r.value.codec} ${r.value.bitrateKbps} kbps"
+                    is Outcome.Err -> r.error.toString()
+                }
+            } catch (e: IOException) {
+                "network: ${e.message}"
+            }
+        }
+    }
+
+    /** For the live check: every audio format each app offers for [videoId], and whether each end of it is served. */
+    internal suspend fun diagnoseFormats(videoId: String): List<String> = withContext(Dispatchers.IO) {
+        APPS.flatMap { app ->
+            val json = when (val r = playerOf(app, videoId)) {
+                is Outcome.Ok -> r.value
+                is Outcome.Err -> return@flatMap listOf("${app.name}: ${r.error}")
+            }
+            (json.obj("streamingData")?.get("adaptiveFormats") as? JsonArray).orEmpty()
+                .mapNotNull { it as? JsonObject }
+                .filter { it.str("mimeType")?.startsWith("audio/") == true }
+                .map { f ->
+                    val url = f.str("url")
+                    val length = f.long("contentLength") ?: url?.queryLong("clen")
+                    val head = url?.let { rangeAnswer(it, app.userAgent, "0-") } ?: "no url (ciphered)"
+                    val tail = if (url != null && length != null && length > 2) rangeAnswer(url, app.userAgent, "${length - 2}-${length - 1}") else "-"
+                    "${app.name} itag ${f.long("itag")} ${f.str("mimeType")?.substringBefore(';')} ${f.long("bitrate")?.div(1000)} kbps drc=${f.bool("isDrc") == true} len=$length head=$head tail=$tail"
+                }
+        }
+    }
+
+    private fun rangeAnswer(url: String, userAgent: String, range: String): String = try {
+        val request = Request.Builder().url(url).header("User-Agent", userAgent).header("Range", "bytes=$range").build()
+        probe.newCall(request).execute().use { r -> "${r.code}" }
+    } catch (e: IOException) {
+        "io: ${e.message}"
+    }
+
+    /**
+     * Let go of [videoId]'s stream, which the player was refused or couldn't play: the app and format
+     * that served it aren't asked for that song again for a while, so the next walk finds another.
+     */
     fun forget(videoId: String) {
+        val failed = servedVia.filterKeys { it.startsWith("$videoId|") }.values.toSet()
+        if (failed.isNotEmpty()) {
+            val earlier = refused[videoId]?.takeIf { now() - it.second < REFUSED_MS }?.first.orEmpty()
+            refused[videoId] = (earlier + failed) to now()
+        }
+        servedVia.keys.removeAll { it.startsWith("$videoId|") }
         resolved.keys.removeAll { it.startsWith("$videoId|") }
+        pictures.keys.removeAll { it.startsWith("$videoId|") }
+    }
+
+    private val pictures = ConcurrentHashMap<String, VideoStream>()
+
+    /**
+     * A video's pictures alone, at most [maxHeight] lines, for playing in step with its audio: the
+     * tallest the app serves that every phone decodes in hardware (H.264 first, then VP9), at 30
+     * frames a second where there's a choice, checked to be served at both ends like the audio.
+     */
+    suspend fun video(videoId: String, maxHeight: Int): Outcome<VideoStream> = withContext(Dispatchers.IO) {
+        val key = "$videoId|$maxHeight"
+        pictures[key]?.takeIf { (it.expiresAtMs ?: Long.MAX_VALUE) - now() > EXPIRY_MARGIN_MS }?.let { return@withContext Outcome.Ok(it) }
+        val order = APPS.sortedBy { if (it.name == lastServed) 0 else 1 }
+        var verdict: SourceError = SourceError.NotPlayable(null)
+        for (app in order) {
+            val json = try {
+                when (val r = playerOf(app, videoId)) {
+                    is Outcome.Ok -> r.value
+                    is Outcome.Err -> {
+                        if (r.error is SourceError.NotFound || r.error is SourceError.RateLimited) return@withContext r
+                        verdict = r.error
+                        continue
+                    }
+                }
+            } catch (e: UnknownHostException) {
+                return@withContext Outcome.Err(SourceError.Offline)
+            } catch (e: IOException) {
+                verdict = SourceError.Network
+                continue
+            }
+            val formats = (json.obj("streamingData")?.get("adaptiveFormats") as? JsonArray).orEmpty()
+                .mapNotNull { it as? JsonObject }
+                .filter { it.str("mimeType")?.startsWith("video/") == true && it.str("url") != null }
+                .filter { (it.long("height") ?: 0) in 1..maxHeight }
+                .filter { codecRank(it) > 0 }
+            val ranked = formats.sortedWith(
+                compareByDescending<JsonObject> { it.long("height") ?: 0 }
+                    .thenByDescending { codecRank(it) }
+                    .thenBy { if ((it.long("fps") ?: 30) > 30) 1 else 0 }
+                    .thenByDescending { it.long("bitrate") ?: 0 },
+            )
+            for (format in ranked.take(3)) {
+                val url = format.str("url")!!
+                val length = format.long("contentLength") ?: url.queryLong("clen")
+                if (!serves(url, app.userAgent, length)) continue
+                val mime = format.str("mimeType")!!
+                val stream = VideoStream(
+                    url = url,
+                    headers = mapOf("User-Agent" to app.userAgent),
+                    width = (format.long("width") ?: 0).toInt(),
+                    height = (format.long("height") ?: 0).toInt(),
+                    mimeType = mime.substringBefore(';'),
+                    codec = mime.substringAfter("codecs=\"", "").substringBefore('"').ifEmpty { null },
+                    expiresAtMs = url.queryLong("expire")?.times(1000),
+                )
+                pictures[key] = stream
+                return@withContext Outcome.Ok(stream)
+            }
+            verdict = SourceError.NotPlayable(if (formats.isEmpty()) "no video" else "refused")
+        }
+        Outcome.Err(verdict)
+    }
+
+    /** H.264 decodes on every phone; VP9 on nearly all; anything else isn't asked for. */
+    private fun codecRank(format: JsonObject): Int {
+        val mime = format.str("mimeType").orEmpty()
+        return when {
+            "avc1" in mime -> 2
+            "vp9" in mime || "vp09" in mime -> 1
+            else -> 0
+        }
+    }
+
+    /** One app's answer for [videoId], checked to be playable and to be the video asked for. */
+    private suspend fun playerOf(app: App, videoId: String): Outcome<JsonObject> {
+        val visitor = visitorFor(app)
+        val body = buildJsonObject {
+            putJsonObject("context") {
+                put("client", clientContext(app, visitor))
+                putJsonObject("user") { put("lockedSafetyMode", false) }
+            }
+            put("videoId", videoId)
+            put("contentCheckOk", true)
+            put("racyCheckOk", true)
+            putJsonObject("playbackContext") {
+                putJsonObject("contentPlaybackContext") { put("html5Preference", "HTML5_PREF_WANTS") }
+            }
+        }
+        val request = Request.Builder()
+            .url("$API/player?prettyPrint=false")
+            .headers(appHeaders(app, visitor))
+            .post(body.toString().toRequestBody(JSON))
+            .build()
+        val json = http.newCall(request).execute().use { r ->
+            if (r.code == 429) return Outcome.Err(SourceError.RateLimited(r.header("Retry-After")?.toLongOrNull()?.times(1000)))
+            if (!r.isSuccessful) return Outcome.Err(SourceError.Server(r.code))
+            lenient.parseToJsonElement(r.body?.string().orEmpty()) as? JsonObject
+        } ?: return Outcome.Err(SourceError.Server(null))
+        val playability = json.obj("playabilityStatus")
+        when (playability?.str("status")) {
+            "OK" -> Unit
+            "ERROR" -> return Outcome.Err(SourceError.NotFound("video"))
+            else -> return Outcome.Err(SourceError.NotPlayable(playability?.str("reason")))
+        }
+        json.obj("videoDetails")?.str("videoId")?.let { if (it != videoId) return Outcome.Err(SourceError.NotPlayable("another video")) }
+        return Outcome.Ok(json)
     }
 
     private suspend fun tryApp(app: App, videoId: String, efficient: Boolean): Outcome<Stream> {
@@ -127,7 +293,8 @@ class YouTubeStreamResolver(
             // Opus first, then AAC; higher bitrate first within each.
             formats.sortedWith(compareByDescending<JsonObject> { it.str("mimeType")!!.contains("opus") }.thenByDescending { it.long("bitrate") ?: 0 })
         }
-        for (format in ranked.take(2)) {
+        val failed = refused[videoId]?.takeIf { now() - it.second < REFUSED_MS }?.first.orEmpty()
+        for (format in ranked.filterNot { "${app.name}:${it.long("itag")}" in failed }.take(2)) {
             val url = format.str("url")!!
             val length = format.long("contentLength") ?: url.queryLong("clen")
             if (serves(url, app.userAgent, length)) {
@@ -211,6 +378,7 @@ class YouTubeStreamResolver(
         const val API = "https://www.youtube.com/youtubei/v1"
         const val VISITOR_TTL_MS = 6 * 60 * 60 * 1000L
         const val EXPIRY_MARGIN_MS = 60_000L
+        const val REFUSED_MS = 10 * 60_000L
         val JSON = "application/json".toMediaType()
         val lenient = Json { ignoreUnknownKeys = true; isLenient = true }
 

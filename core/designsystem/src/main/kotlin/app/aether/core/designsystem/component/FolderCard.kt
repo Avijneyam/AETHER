@@ -39,15 +39,8 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFontFamilyResolver
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.font.FontFamily
 import app.aether.core.designsystem.theme.retained
-import app.aether.core.model.withoutEmoji
 import androidx.compose.runtime.Stable
-import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
@@ -58,11 +51,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -109,8 +98,8 @@ private const val SoftPx = 40
  *
  * In flight ([flying] 0 to 1) it's drawn at its full [width] by whoever scales it down to where it
  * is, and it opens as it goes. At 0 it's exactly the folder of [fromWidth] it left: everything on it
- * measured in points (its words, the files' labels and how they're set in) holds its size against
- * the scale, because those are the same size on the small folder and the large.
+ * measured in points (its words, and how far its files are set in) holds its size against the
+ * scale, because those are the same size on the small folder and the large.
  *
  * Drawn light: the back and the files are one drawing, the front another, each picture painted
  * straight into its outline (no clipping layers), from pictures kept in memory.
@@ -140,7 +129,6 @@ fun FolderCard(
     // In flight: the scale it's being drawn at, and what undoes it for anything that holds its size.
     val small = if (flying != null && width > 0.dp) fromWidth / width else 1f
     val scaled: () -> Float = if (flying != null) ({ small + (1f - small) * flying() }) else ({ 1f })
-    val measurer = folderMeasurer()
     // The back and its songs one texture, the frosted front another, always painted flat and then only
     // moved. It's those flat pictures that lean and tilt: painting its outlines under a 3D tilt made the
     // GPU work out each one's coverage by hand, a tenth of a second or more for a large folder, and
@@ -157,7 +145,6 @@ fun FolderCard(
     val filePaints = listOf(rememberPicturePaint(f0.bitmap), rememberPicturePaint(f1.bitmap), rememberPicturePaint(f2.bitmap))
     val softShown = soft.arrival()
     val fileShown = listOf(f0.arrival(), f1.arrival(), f2.arrival())
-    val labels = cards.take(3).map { it.label.withoutEmoji().uppercase() }
 
     Column(modifier.width(width), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
@@ -213,32 +200,15 @@ fun FolderCard(
                 kept.fillMaxSize().drawWithCache {
                     val backPath = outlinePath(FolderBackShape, size, layoutDirection, this)
                     val backFill = Brush.verticalGradient(listOf(FolderBackTop, FolderBackFoot))
-                    // Only as dark as a label needs, at the top of the card where it sits.
-                    val cardShade = Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.5f), 0.5f to Color.Black.copy(alpha = 0.1f), 1f to Color.Transparent, endY = size.height * 0.4f)
-                    val pad = 5.dp.toPx()
-                    // Each file's label, ellipsised inside its own card as it always was.
-                    fun labelsFor(folderWidth: Float) = labels.mapIndexed { i, label ->
-                        val fw = folderWidth * (0.62f - i * 0.06f)
-                        measurer.measure(
-                            label,
-                            Type.Micro,
-                            overflow = TextOverflow.Ellipsis,
-                            maxLines = 1,
-                            constraints = Constraints(maxWidth = (fw - pad * 2).toInt().coerceAtLeast(1)),
-                            density = this,
-                        )
-                    }
-                    val labelLayouts = labelsFor(size.width)
-                    // In flight, as they read on the folder it left too: they give way to the larger set.
-                    val smallLayouts = if (flying != null) labelsFor(size.width * small) else labelLayouts
                     onDrawBehind {
                         drawPath(backPath, backFill)
-                        // Files: the playlist's songs, peeking out and rising.
+                        // Files: the playlist's songs, peeking out and rising, each cover as it is:
+                        // nothing is written on them and nothing darkens them.
                         val opening = open()
                         // A point on the folder in flight, as many of its own points as make one on screen.
                         val pt = 1f / scaled().coerceAtLeast(0.01f)
                         val lift = (press.value * 7f * pt + opening * 22f).dp.toPx()
-                        for (i in 0 until minOf(3, labels.size)) {
+                        for (i in 0 until minOf(3, cards.size)) {
                             val fw = size.width * (0.62f - i * 0.06f)
                             val fh = size.height * 0.4f
                             val left = size.width - (10 + i * 12).dp.toPx() * pt - fw
@@ -249,22 +219,6 @@ fun FolderCard(
                                     val card = Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, fw, fh, CornerRadius(5.dp.toPx() * pt))) }
                                     drawPath(card, Ink.Coal)
                                     filePaints[i]?.draw(this, card, Rect0(Size(fw, fh)), fileShown[i]())
-                                    drawPath(card, cardShade)
-                                    if (flying == null) {
-                                        val label = labelLayouts[i]
-                                        drawText(label, color = Ink.White.copy(alpha = 0.8f), topLeft = Offset(fw - pad - label.size.width, pad))
-                                    } else {
-                                        val large = wordsArrive(flying())
-                                        fun held(label: androidx.compose.ui.text.TextLayoutResult, alpha: Float) {
-                                            if (alpha <= 0.004f) return
-                                            val x = fw - (pad + label.size.width) * pt
-                                            translate(x, pad * pt) {
-                                                scale(pt, pt, pivot = Offset.Zero) { drawText(label, color = Ink.White.copy(alpha = 0.8f * alpha)) }
-                                            }
-                                        }
-                                        held(smallLayouts[i], 1f - large)
-                                        held(labelLayouts[i], large)
-                                    }
                                 }
                             }
                         }
@@ -346,26 +300,6 @@ private val FolderFrontFoot = Color(0xFF3B3B3E)
 
 /** How much of the cover's light and shade shows in the frost. */
 private const val FrostStrength = 0.4f
-
-/**
- * One measurer for every folder, remembering what it has set: a folder coming back into view, or
- * flying off to its page, doesn't set the little labels on its songs again.
- */
-@Composable
-private fun folderMeasurer(): TextMeasurer {
-    val fonts = LocalFontFamilyResolver.current
-    val density = LocalDensity.current
-    val direction = LocalLayoutDirection.current
-    return remember(fonts, density, direction) {
-        val kept = keptMeasurer
-        if (kept != null && kept.fonts === fonts && kept.density == density && kept.direction == direction) kept.measurer
-        else TextMeasurer(fonts, density, direction, cacheSize = 256).also { keptMeasurer = KeptMeasurer(fonts, density, direction, it) }
-    }
-}
-
-private class KeptMeasurer(val fonts: FontFamily.Resolver, val density: Density, val direction: LayoutDirection, val measurer: TextMeasurer)
-
-private var keptMeasurer: KeptMeasurer? = null
 
 /** Over which part of a flight the words of the small folder give way to those of the large. */
 private fun wordsArrive(t: Float): Float = ((t - 0.2f) / 0.45f).coerceIn(0f, 1f)

@@ -39,6 +39,9 @@ sealed interface Route {
     data class OnThisPhone(val path: String = "") : Route { override val key = "phone:$path" }
     data object Kept : Route { override val key = "kept" }
 
+    /** An album of the phone's songs, or of songs kept from the catalogue. */
+    data class OfflineAlbum(val album: String) : Route { override val key = "offline-album:$album" }
+
     /** Choosing the phone's music folders, a level at a time. */
     data class MusicFolders(val path: String = "") : Route { override val key = "music-folders:$path" }
 }

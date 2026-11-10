@@ -1,5 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.ui
 
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
 import app.aether.ui.player.KeepList
 import app.aether.core.designsystem.component.Pull
 import androidx.activity.compose.BackHandler
@@ -22,12 +27,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
@@ -115,6 +116,7 @@ import app.aether.core.model.Podcast
 import app.aether.core.model.Track
 import app.aether.ui.common.LocalContainer
 import app.aether.ui.menu.TrackMenu
+import app.aether.update.UpdateSheet
 import app.aether.ui.player.MiniPlayer
 import app.aether.ui.player.NowPlaying
 import kotlinx.coroutines.CoroutineScope
@@ -261,14 +263,22 @@ fun Shell() {
     val reduce = LocalReduceMotion.current
     val density = LocalDensity.current
     val dock = rememberDock(reduce)
+    // A newer AETHER is offered on a sheet over the room, never over a song being listened to: one that
+    // turns up while Now Playing is open waits for it to close.
+    val update = rememberDragState()
+    val updateShown by container.updates.shown.collectAsStateWithLifecycle()
+    LaunchedEffect(updateShown, player.visible) {
+        if (updateShown && !player.visible) update.show() else if (!updateShown) update.hide()
+    }
 
     AutoQueue(actions)
     LaunchedEffect(playback.hasMedia) { if (!playback.hasMedia) player.hide() }
     // Every new page starts with the dock open.
     LaunchedEffect(nav.current) { dock.unfold() }
 
-    BackHandler(enabled = keeps.visible || menu.visible || player.visible || nav.canGoBack) {
+    BackHandler(enabled = update.visible || keeps.visible || menu.visible || player.visible || nav.canGoBack) {
         when {
+            update.visible -> update.hide()
             keeps.visible -> keeps.hide()
             menu.visible -> menu.hide()
             player.visible -> player.hide()
@@ -313,7 +323,7 @@ fun Shell() {
                     Pages(nav, actions.flight, dock.watcher, paused = { player.visible || menu.visible || keeps.visible })
                 },
                 overlay = {
-                    val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                    val top = WindowInsets.statusBarsIgnoringVisibility.asPaddingValues().calculateTopPadding()
                     // Under a Now Playing that's fully open, the rooms' own glass isn't placed, so it isn't
                     // drawn (Android keeps rendering hidden glass's blurs and lenses, invisible or not).
                     // It stays made: pulling the player down finds it all there, with nothing to build
@@ -360,6 +370,10 @@ fun Shell() {
                     }
                     if (!menuInPlayer || !player.visible) menuSheet()
                     if (!keepsInPlayer || !player.visible) keepsSheet()
+                    // Pulled away, an offer comes back another day; a download carries on behind it.
+                    DragSheet(update, height = 560.dp, onClosed = { if (container.updates.shown.value) container.updates.dismiss() }) {
+                        UpdateSheet(container.updates)
+                    }
                 },
             )
             MetalCardOverlay(card, onSaved = { keep.note(it) })
@@ -384,7 +398,7 @@ private fun BoxScope.Corner(nav: Navigator, player: DragState) {
     Box(
         Modifier
             .align(Alignment.TopStart)
-            .statusBarsPadding()
+            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
             .padding(start = Space.edge, top = 6.dp)
             .placedWhile { there }
             .graphicsLayer {
@@ -481,7 +495,7 @@ private fun BoxScope.SettingsKey(nav: Navigator, screenWidth: Float) {
         { nav.open(Route.Settings) },
         modifier = Modifier
             .align(Alignment.TopEnd)
-            .statusBarsPadding()
+            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
             .padding(end = Space.edge, top = 6.dp)
             .placedWhile { there }
             .graphicsLayer {
@@ -591,7 +605,7 @@ private fun BoxScope.Dock(nav: Navigator, playback: PlaybackState, player: DragS
         Modifier
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
-            .navigationBarsPadding()
+            .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
             .padding(horizontal = Space.edge)
             .padding(bottom = Gap)
             .height(Bar + Gap + Bar),
@@ -626,7 +640,7 @@ private fun BoxScope.Dock(nav: Navigator, playback: PlaybackState, player: DragS
 /** The frost under the dock: as tall as the dock needs, and lower once it has folded. */
 @Composable
 private fun BoxScope.DockFrost(dock: DockState, hasMedia: Boolean) {
-    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottom = WindowInsets.navigationBarsIgnoringVisibility.asPaddingValues().calculateBottomPadding()
     val open = if (hasMedia) Bar + Gap + Bar else Bar
     EdgeBlur(Edge.Bottom, bottom + Gap + lerp(open, Folded, dock.fold.value.coerceIn(0f, 1f)) + 52.dp)
 }

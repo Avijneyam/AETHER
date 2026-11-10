@@ -43,7 +43,11 @@ import kotlinx.coroutines.withContext
  * their audio; without it, it simply has nothing. Once asked, it watches the store, so a song added
  * to or taken off the phone shows up by itself.
  */
-class LocalSource(context: Context) : MusicSource, PhoneLibrary {
+class LocalSource(
+    context: Context,
+    /** Files that belong elsewhere in AETHER (kept songs, under Kept), by their media store address: not listed here. */
+    private val hidden: (String) -> Boolean = { false },
+) : MusicSource, PhoneLibrary {
     private val context = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs = this.context.getSharedPreferences("local_source", Context.MODE_PRIVATE)
@@ -115,16 +119,21 @@ class LocalSource(context: Context) : MusicSource, PhoneLibrary {
     }
 
     private fun read(): List<PhoneSong> {
-        val columns = arrayOf(
+        // The album's artist is a column of its own from Android 11; before, the song's artist stands in.
+        val albumArtist = Build.VERSION.SDK_INT >= 30
+        val columns = listOfNotNull(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.TRACK,
             MediaStore.Audio.Media.YEAR,
+            MediaStore.Audio.Media.DATE_ADDED,
             MediaStore.MediaColumns.RELATIVE_PATH,
-        )
+            if (albumArtist) MediaStore.Audio.Media.ALBUM_ARTIST else null,
+        ).toTypedArray()
         val songs = ArrayList<PhoneSong>()
         runCatching {
             context.contentResolver.query(
@@ -142,9 +151,13 @@ class LocalSource(context: Context) : MusicSource, PhoneLibrary {
                 val iTrack = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
                 val iYear = c.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
                 val iPath = c.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)
+                val iAlbumId = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                val iAdded = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                val iAlbumArtist = if (albumArtist) c.getColumnIndex(MediaStore.Audio.Media.ALBUM_ARTIST) else -1
                 while (c.moveToNext()) {
                     val key = c.getLong(iId)
                     val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, key)
+                    if (runCatching { hidden(uri.toString()) }.getOrDefault(false)) continue
                     val artist = c.getString(iArtist)?.takeUnless { it.isBlank() || it == MediaStore.UNKNOWN_STRING }
                     val track = Track(
                         id = MediaId("$id:$key"),
@@ -157,7 +170,15 @@ class LocalSource(context: Context) : MusicSource, PhoneLibrary {
                         trackNumber = (c.getInt(iTrack) % 1000).takeIf { it > 0 },
                         year = c.getInt(iYear).takeIf { it > 0 },
                     )
-                    songs += PhoneSong(track, FolderSelection.normalize(c.getString(iPath).orEmpty()))
+                    songs += PhoneSong(
+                        track = track,
+                        folder = FolderSelection.normalize(c.getString(iPath).orEmpty()),
+                        albumKey = c.getLong(iAlbumId).takeIf { it != 0L }?.toString(),
+                        albumArtist = if (iAlbumArtist >= 0) c.getString(iAlbumArtist)?.takeUnless { it.isBlank() || it == MediaStore.UNKNOWN_STRING } else null,
+                        // The store writes a song's place as its disc's thousands and its own number.
+                        disc = c.getInt(iTrack) / 1000,
+                        addedAt = c.getLong(iAdded),
+                    )
                 }
             }
         }
@@ -170,6 +191,21 @@ class LocalSource(context: Context) : MusicSource, PhoneLibrary {
         if (_songs.value == null) withContext(Dispatchers.IO) { publish() }
         val found = _songs.value.orEmpty().map { it.track }.filter { t -> t.title.lowercase().contains(q) || t.artistLine.lowercase().contains(q) || t.album?.title?.lowercase()?.contains(q) == true }
         return Outcome.Ok(SearchResults(found, emptyList(), null))
+    }
+
+    /** Where a song of this source is: its file in the media store, its folder and its name. */
+    data class PhoneFile(val uri: android.net.Uri, val folder: String, val name: String)
+
+    /** The file behind [id], when it's this source's and the store still has it. */
+    suspend fun file(id: MediaId): PhoneFile? = withContext(Dispatchers.IO) {
+        if (id.source != this@LocalSource.id) return@withContext null
+        val key = id.key.toLongOrNull() ?: return@withContext null
+        val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, key)
+        runCatching {
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (!c.moveToFirst()) null else PhoneFile(uri, c.getString(0).orEmpty(), c.getString(1).orEmpty())
+            }
+        }.getOrNull()
     }
 
     override suspend fun stream(id: MediaId, efficient: Boolean): Outcome<Stream> {

@@ -47,7 +47,39 @@ data class Stream(
     val expiresAtMs: Long? = null,
     /** Stable across address changes: the cache keys on it, never on the url. */
     val cacheKey: String,
+    /** What [url] is: the audio itself, or a manifest of it in pieces. */
+    val manifest: Manifest = Manifest.NONE,
+    /**
+     * The listener's own source this copy came from, when it isn't the song's own source (an exact
+     * copy from an addon). Null for the song's own stream.
+     */
+    val servedBy: String? = null,
+) {
+    enum class Manifest { NONE, DASH, HLS }
+}
+
+/**
+ * A video's pictures, without its sound: the song's own audio is what plays, and the pictures follow
+ * it. For watching a music video on Now Playing.
+ */
+data class VideoStream(
+    val url: String,
+    val headers: Map<String, String> = emptyMap(),
+    val width: Int,
+    val height: Int,
+    val mimeType: String? = null,
+    val codec: String? = null,
+    val expiresAtMs: Long? = null,
 )
+
+/** Something the player may play a song from: the song's own source, or a copy from one of the listener's own. */
+enum class StreamPurpose {
+    /** Listening now: an exact copy from one of the listener's sources may be asked for first. */
+    LISTEN,
+
+    /** Kept on the phone: always the song's own source, as addons only stream. */
+    KEEP,
+}
 
 /**
  * A music provider. Each one is isolated in its own `sources:*` module and turns its own answers
@@ -89,8 +121,27 @@ interface MusicSource {
     /** The audio for [id], at the best quality this source has unless [efficient]. */
     suspend fun stream(id: MediaId, efficient: Boolean = false): Outcome<Stream> = unsupported()
 
+    /** The pictures of a video [id], at most [maxHeight] lines tall, to play in step with its audio. */
+    suspend fun video(id: MediaId, maxHeight: Int): Outcome<VideoStream> = unsupported()
+
     /** Forget a stream the player was refused, so the next ask resolves afresh. */
     fun invalidate(id: MediaId) = Unit
 }
 
 private fun unsupported(): Outcome<Nothing> = Outcome.Err(SourceError.Unsupported)
+
+/**
+ * A source of the listener's own that can be asked for an exact copy of another source's song (an
+ * addon, after BitChord's and PODIUM's custom sources): the same recording, edition and artist, never
+ * a near miss. The song itself still belongs to its own source.
+ */
+interface CopySource {
+    val id: String
+    val name: String
+
+    /** Whether it can be asked at all just now (it isn't resting after failing or being asked too often). */
+    val ready: Boolean get() = true
+
+    /** The stream of an exact copy of [track], when this source has one; null when it hasn't, or can't say. */
+    suspend fun exactCopy(track: Track): Stream?
+}

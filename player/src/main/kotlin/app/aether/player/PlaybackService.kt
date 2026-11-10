@@ -2,6 +2,8 @@ package app.aether.player
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -10,12 +12,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import app.aether.core.model.EqProfile
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
@@ -23,6 +26,7 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
+import app.aether.core.model.HeardFormat
 import app.aether.core.model.MediaId
 import app.aether.core.model.Outcome
 import app.aether.core.model.PlayRecorder
@@ -31,6 +35,8 @@ import app.aether.core.model.RepeatMode
 import app.aether.core.model.SavedQueue
 import app.aether.core.model.SourceError
 import app.aether.core.model.Stream
+import app.aether.core.model.StreamPurpose
+import app.aether.core.model.Track
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -53,14 +59,40 @@ import android.os.Bundle
 
 /** What the service needs from the app: streams, a place for the queue, a record of plays. */
 interface PlaybackEnvironment {
-    suspend fun stream(id: MediaId): Outcome<Stream>
+    /**
+     * The audio for [id]. Listening, with the whole [track] in hand, an exact copy from one of the
+     * listener's own sources may be chosen; read again without it, the same choice. Keeping is the
+     * song's own source.
+     */
+    suspend fun stream(id: MediaId, purpose: StreamPurpose = StreamPurpose.LISTEN, track: Track? = null): Outcome<Stream>
     fun invalidate(id: MediaId)
+
+    /** Where a kept song's file is on the phone (the listener's Music folder), when it's been kept there. */
+    fun keptFile(id: MediaId): android.net.Uri? = null
     val queueStore: QueueStore
     val recorder: PlayRecorder
     val http: OkHttpClient
 
     /** What the music should go through; null when nothing should touch it. */
     val equaliser: StateFlow<EqProfile?>
+
+    /** Seconds the end of one song and the start of the next overlap; 0 is off. */
+    val crossfadeSeconds: StateFlow<Int>
+
+    /** A song's id, each time a copy of it from one of the listener's sources turns up after it began. */
+    val lateCopies: Flow<MediaId> get() = emptyFlow()
+
+    /** That copy, to carry the song over to; null once it's gone or been chosen. */
+    fun lateCopy(id: MediaId): Stream? = null
+
+    /** The song is heard from its late copy now, or from its own source again. */
+    fun hearingCopy(id: MediaId, hearing: Boolean) {}
+
+    /** The song goes over to its late copy for good: read again, it's the copy. False when there isn't one. */
+    fun adoptCopy(id: MediaId): Boolean = false
+
+    /** The late copy wouldn't play: it isn't offered again for a while. */
+    fun dropLateCopy(id: MediaId) {}
     fun sessionActivity(): PendingIntent?
 }
 
@@ -84,7 +116,8 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private var session: MediaLibrarySession? = null
     private var saveJob: Job? = null
-    private var retried: String? = null
+    /** The song last recovered, how many times in a row, and when last. */
+    private var retried: Triple<String, Int, Long>? = null
     private var counted: String? = null
 
     /** The bit-perfect route watcher (Android 14 and later); typed loosely so older phones never load it. */
@@ -92,23 +125,54 @@ class PlaybackService : MediaLibraryService() {
     private var route = Route(null, false)
     private val equaliser = EqualiserProcessor()
 
+    /** Crossfade's second player hears through an equaliser of its own, kept in step with the first's. */
+    private val helperEqualiser = EqualiserProcessor()
+
+    /** Each player's loudness, measured only while a copy is being lined up with its song by its sound. */
+    private val meter = AudioMeter()
+    private val helperMeter = AudioMeter()
+    private lateinit var audio: CacheDataSource.Factory
+    private lateinit var chosen: ChosenSources
+    private lateinit var crossfader: Crossfader
+
+    /** A copy found mid-song that couldn't be carried over to then: the song goes over at its next pause or seek. */
+    private var pendingCopy: MediaId? = null
+
+    /** What's heard while a song is carried by its copy: the copy's format, not the first player's. */
+    private var carried: HeardFormat? = null
+
     override fun onCreate() {
         super.onCreate()
         env = application as PlaybackEnvironment
         // Kept songs play from the phone; everything else streams (and is never written to the keep).
-        val audio = CacheDataSource.Factory()
+        audio = CacheDataSource.Factory()
             .setCache(AudioStore.cache(this))
             .setCacheKeyFactory(AudioStore::keyOf)
-            .setUpstreamDataSourceFactory(AudioStore.upstream(this))
+            .setUpstreamDataSourceFactory(AudioStore.upstream(this, StreamPurpose.LISTEN))
             .setCacheWriteDataSinkFactory(null)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        player = ExoPlayer.Builder(this, ShapedRenderers(this, equaliser).setEnableAudioFloatOutput(true))
-            .setMediaSourceFactory(DefaultMediaSourceFactory(audio))
+        chosen = ChosenSources(this, env, DefaultMediaSourceFactory(audio))
+        player = ExoPlayer.Builder(this, ShapedRenderers(this, equaliser, meter).setEnableAudioFloatOutput(true))
+            // Each song's way of playing is chosen as the player reaches it (ChosenSources); a song is
+            // prepared only then, never the whole queue at once.
+            .setMediaSourceFactory(chosen)
+            .setUseLazyPreparation(true)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         player.addListener(Watcher())
+        crossfader = Crossfader(
+            main = player,
+            newHelper = ::buildHelper,
+            songAt = ::crossfadeSong,
+            scope = scope,
+            // Bit-perfect, the mixer takes one stream through untouched: two songs at once aren't that.
+            blocked = { route.bitPerfect },
+            onCarrying = ::onCarrying,
+            onCarryEnded = ::onCarryEnded,
+            soundAlignment = { SoundAlignment(meter, helperMeter) },
+        )
         session = MediaLibrarySession.Builder(this, player, Callback())
             .apply { env.sessionActivity()?.let { setSessionActivity(it) } }
             .build()
@@ -121,9 +185,12 @@ class PlaybackService : MediaLibraryService() {
         scope.launch {
             env.equaliser.collect {
                 equaliser.update(it)
+                helperEqualiser.update(it)
                 reportRoute()
             }
         }
+        scope.launch { env.crossfadeSeconds.collect { crossfader.seconds = it } }
+        scope.launch { env.lateCopies.collect(::carryOver) }
         scope.launch { restore() }
         scope.launch { countPlays() }
     }
@@ -133,7 +200,71 @@ class PlaybackService : MediaLibraryService() {
         session?.setSessionExtras(Bundle().apply {
             putString(EXTRA_OUTPUT, route.device)
             putBoolean(EXTRA_BIT_PERFECT, route.bitPerfect && !equaliser.shaping)
+            carried?.let { putBundle(EXTRA_CARRIED, it.toBundle()) }
         })
+    }
+
+    // --- A better copy found mid-song (PODIUM's D-92) ------------------------------------------------
+
+    /**
+     * A copy of a song from one of the listener's sources turned up after the song had begun from its
+     * own source. If that song is playing, it's carried over to the copy now, unheard but for a short
+     * crossfade; paused, it simply goes over; when neither can be done (a DAC playing bit-perfect,
+     * a crossfade under way, too little left), it goes over at the next pause or seek.
+     */
+    private fun carryOver(id: MediaId) {
+        val item = player.currentMediaItem ?: return
+        // The song it's for has gone by: it's that song's copy from its next play.
+        if (item.mediaId != id.value) return
+        val copy = env.lateCopy(id) ?: return
+        when {
+            !player.playWhenReady -> switchToCopy(id, player.currentPosition)
+            !crossfader.carry(id.value, chosen.copySource(copy, item)) -> pendingCopy = id
+        }
+    }
+
+    private fun onCarrying(uid: String) {
+        // What's heard is the copy now: its format, measured by its own player, and where it's from.
+        carried = crossfader.helperPlayer?.currentTracks?.heardFormat()
+        env.hearingCopy(MediaId(uid), true)
+        reportRoute()
+    }
+
+    private fun onCarryEnded(end: Crossfader.CarryEnd) {
+        val id = MediaId(end.uid)
+        carried = null
+        reportRoute()
+        when (end.reason) {
+            // Paused, or sought: [player] goes over to the copy, unheard, where the music is.
+            Crossfader.CarryReason.PAUSED -> switchToCopy(id, if (end.heard) end.positionMs else player.currentPosition)
+            Crossfader.CarryReason.SOUGHT -> switchToCopy(id, player.currentPosition)
+            // The song is over: the copy is its own from its next play.
+            Crossfader.CarryReason.ENDED, Crossfader.CarryReason.MOVED_ON -> env.hearingCopy(id, false)
+            // The copy wouldn't play: it isn't offered again for a while.
+            Crossfader.CarryReason.COPY_FAILED -> env.dropLateCopy(id)
+            // It couldn't be got level in time, or the moment went: over at the next pause or seek.
+            Crossfader.CarryReason.GAVE_UP, Crossfader.CarryReason.FAILED, Crossfader.CarryReason.CANCELLED -> later(id, end.heard)
+        }
+    }
+
+    private fun later(id: MediaId, heard: Boolean) {
+        if (heard) env.hearingCopy(id, false)
+        pendingCopy = id
+    }
+
+    /**
+     * [player] goes over to [id]'s copy for good, at [positionMs]: the same song in the queue, played
+     * the new way (ChosenSources chooses it afresh, and the copy is now the one chosen).
+     */
+    private fun switchToCopy(id: MediaId, positionMs: Long) {
+        val index = player.currentMediaItemIndex
+        val item = player.currentMediaItem ?: return
+        if (item.mediaId != id.value) return
+        pendingCopy = null
+        if (!env.adoptCopy(id)) return
+        player.replaceMediaItem(index, item)
+        player.seekTo(index, positionMs)
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -149,11 +280,32 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         if (Build.VERSION.SDK_INT >= 34) (bitPerfect as? BitPerfect)?.stop()
         saveNow()
+        crossfader.release()
         session?.release()
         session = null
         player.release()
         scope.cancel()
         super.onDestroy()
+    }
+
+    /**
+     * Crossfade's second player: the same sound path and the same way of choosing each song's audio,
+     * silent until it carries a song's end. It never takes the audio focus or the session; [player]
+     * keeps both.
+     */
+    private fun buildHelper(): ExoPlayer = ExoPlayer.Builder(this, ShapedRenderers(this, helperEqualiser, helperMeter).setEnableAudioFloatOutput(true))
+        .setMediaSourceFactory(ChosenSources(this, env, DefaultMediaSourceFactory(audio)))
+        .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
+        .build()
+
+    /** What crossfade's rules need of the song at a place in the queue. */
+    private fun crossfadeSong(index: Int): CrossfadeRules.Song? {
+        if (index !in 0 until player.mediaItemCount) return null
+        val track = player.getMediaItemAt(index).toTrack() ?: return null
+        val duration = track.durationMs ?: player.duration.takeIf { index == player.currentMediaItemIndex && it != C.TIME_UNSET && it > 0 }
+        // The album by its id where the source gives one; on the phone, by its name and its maker.
+        val album = track.album?.let { it.id?.value ?: "${it.title}|${track.artists.firstOrNull()?.name.orEmpty()}" }
+        return CrossfadeRules.Song(album, track.trackNumber, duration)
     }
 
     private suspend fun restore() {
@@ -217,7 +369,17 @@ class PlaybackService : MediaLibraryService() {
         override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) = saveSoon()
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             retried = null
+            if (pendingCopy?.value != mediaItem?.mediaId) pendingCopy = null
             saveSoon()
+        }
+
+        // A copy waiting for its moment: a pause, or a seek (which is a wait for the music anyway).
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (!playWhenReady) pendingCopy?.let { switchToCopy(it, player.currentPosition) }
+        }
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) pendingCopy?.let { switchToCopy(it, player.currentPosition) }
         }
 
         override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
@@ -230,16 +392,22 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onPlayerError(error: PlaybackException) {
             val item = player.currentMediaItem ?: return
-            val refused = (error.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode in setOf(403, 410)
-            // A stream that stopped being served: resolve it afresh once, from where it stopped.
-            if (refused && retried != item.mediaId) {
-                retried = item.mediaId
-                env.invalidate(MediaId(item.mediaId))
-                val at = player.currentPosition
-                player.seekTo(player.currentMediaItemIndex, at)
-                player.prepare()
-                player.play()
-            }
+            // A song that fails, however it fails, is asked for afresh from where it stopped, twice at
+            // most in a row: a copy from one of the listener's sources gives way to the song's own
+            // stream, and a stream of its own that stopped being served (or never was) is resolved
+            // again, from another of YouTube's apps or formats. Only then is the failure the listener's
+            // to see. A song that plays a while before failing again starts over.
+            val now = SystemClock.elapsedRealtime()
+            val last = retried?.takeIf { it.first == item.mediaId && now - it.third < RecoveryWindowMs }
+            val attempts = last?.second ?: 0
+            if (attempts >= MaxRecoveries) return
+            retried = Triple(item.mediaId, attempts + 1, now)
+            Log.w("AETHER", "playback failed (${error.errorCodeName}); recovering ${item.mediaId}, attempt ${attempts + 1}", error)
+            env.invalidate(MediaId(item.mediaId))
+            val at = player.currentPosition
+            player.seekTo(player.currentMediaItemIndex, at)
+            // The listener's play or pause is kept as it was.
+            player.prepare()
         }
     }
 
@@ -271,13 +439,15 @@ class PlaybackService : MediaLibraryService() {
 
 /**
  * Turns `aether://track/<id>` into the source's stream as the player reads it: address, the
- * headers the source requires, and a cache key that survives the address changing.
+ * headers the source requires, and a cache key that survives the address changing. For listening
+ * it's the stream chosen when the song was prepared (an exact copy, when one was chosen); for
+ * keeping, always the song's own.
  */
 @OptIn(UnstableApi::class)
-internal class Resolver(private val env: PlaybackEnvironment) : ResolvingDataSource.Resolver {
+internal class Resolver(private val env: PlaybackEnvironment, private val purpose: StreamPurpose) : ResolvingDataSource.Resolver {
     override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
         val id = dataSpec.uri.trackId() ?: return dataSpec
-        val outcome = runBlocking { env.stream(id) }
+        val outcome = runBlocking { env.stream(id, purpose) }
         val stream = when (outcome) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> throw IOException(describe(outcome.error))
@@ -299,5 +469,10 @@ internal class Resolver(private val env: PlaybackEnvironment) : ResolvingDataSou
     }
 }
 
+/** A failing song is recovered at most this many times in a row, a run ending once it has played this long. */
+private const val MaxRecoveries = 2
+private const val RecoveryWindowMs = 60_000L
+
 internal const val EXTRA_OUTPUT = "aether.output"
+internal const val EXTRA_CARRIED = "aether.carried"
 internal const val EXTRA_BIT_PERFECT = "aether.bitPerfect"

@@ -17,7 +17,11 @@ kotlin {
 
 dependencies {
     api(project(":core:model"))
+    // The recording matcher's title and artist rules (PODIUM's normaliser), shared with the lyrics.
+    implementation(project(":core:lyrics"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
 }

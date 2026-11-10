@@ -22,6 +22,7 @@ import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.media3.exoplayer.scheduler.Scheduler
 import app.aether.core.model.MediaId
+import app.aether.core.model.StreamPurpose
 import app.aether.core.model.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -54,6 +55,14 @@ internal object AudioStore {
         cache ?: SimpleCache(File(context.applicationContext.filesDir, "kept"), NoOpCacheEvictor(), database(context)).also { cache = it }
     }
 
+    /** Whether the whole of [id]'s audio is kept in the store (a song kept before kept songs went to Music). */
+    fun kept(context: Context, id: MediaId): Boolean = runCatching {
+        val key = "track:${id.value}"
+        val store = cache(context)
+        val length = androidx.media3.datasource.cache.ContentMetadata.getContentLength(store.getContentMetadata(key))
+        length > 0 && store.isCached(key, 0, length)
+    }.getOrDefault(false)
+
     /** The key a song's audio is kept under. */
     fun keyOf(spec: DataSpec): String = spec.uri.trackId()?.let { "track:${it.value}" } ?: spec.key ?: spec.uri.toString()
 
@@ -61,11 +70,13 @@ internal object AudioStore {
      * Streams as the player gets them: resolved from the song's id as they're read. The app's HTTP
      * client is asked for only when a request is made, so this can be built while the app still is.
      */
-    fun upstream(context: Context): DataSource.Factory {
+    fun upstream(context: Context, purpose: StreamPurpose): DataSource.Factory {
         val env = context.applicationContext as PlaybackEnvironment
-        val http = OkHttpDataSource.Factory(Call.Factory { request -> env.http.newCall(request) })
-        return ResolvingDataSource.Factory(DefaultDataSource.Factory(context.applicationContext, http), Resolver(env))
+        return ResolvingDataSource.Factory(DefaultDataSource.Factory(context.applicationContext, http(env)), Resolver(env, purpose))
     }
+
+    /** The app's own HTTP client, asked for only when a request is made. */
+    fun http(env: PlaybackEnvironment): OkHttpDataSource.Factory = OkHttpDataSource.Factory(Call.Factory { request -> env.http.newCall(request) })
 
     /** The one download manager, shared by the screens and the service. Main thread only. */
     fun manager(context: Context): DownloadManager = manager ?: synchronized(this) {
@@ -73,7 +84,7 @@ internal object AudioStore {
             context.applicationContext,
             database(context),
             cache(context),
-            CacheDataSource.Factory().setCache(cache(context)).setCacheKeyFactory(::keyOf).setUpstreamDataSourceFactory(upstream(context)),
+            CacheDataSource.Factory().setCache(cache(context)).setCacheKeyFactory(::keyOf).setUpstreamDataSourceFactory(upstream(context, StreamPurpose.KEEP)),
             Executors.newFixedThreadPool(2),
         ).apply { maxParallelDownloads = 2 }.also { manager = it }
     }
@@ -85,7 +96,14 @@ internal object AudioStore {
  * network at all. Keeping runs in [KeepService], in the background, with its progress shown.
  */
 @OptIn(UnstableApi::class)
-class Downloads(private val context: Context, private val scope: CoroutineScope) {
+class Downloads(
+    private val context: Context,
+    private val scope: CoroutineScope,
+    /** A song's words as LRC, for its file's tags, when they're known; null otherwise. */
+    private val lyricsOf: suspend (Track) -> String? = { null },
+    /** A song's cover as a JPEG, for its file's tags; null when it can't be had. */
+    private val coverOf: suspend (Track) -> ByteArray? = { null },
+) {
     enum class Status { Queued, Keeping, Kept, Failed }
 
     /** A song being kept or kept: the track, how it stands, and how far along (0..1). */
@@ -95,6 +113,20 @@ class Downloads(private val context: Context, private val scope: CoroutineScope)
     private val _entries = MutableStateFlow<Map<MediaId, Entry>>(emptyMap())
     val entries: StateFlow<Map<MediaId, Entry>> = _entries.asStateFlow()
     private var ticker: Job? = null
+
+    /** Kept songs as files in the listener's Music folder. */
+    val files = KeptFiles(context)
+
+    /** From the manager: what's being kept, and what's whole in the app's store. */
+    private var downloading: Map<MediaId, Entry> = emptyMap()
+
+    /** Songs being written out to the Music folder now, and those that couldn't be this session. */
+    private val writing = java.util.Collections.synchronizedSet(HashSet<MediaId>())
+    private val couldNot = java.util.Collections.synchronizedSet(HashSet<MediaId>())
+    private var exporter: Job? = null
+
+    /** Where [id]'s file is in the Music folder, when it's been kept there. */
+    fun keptFile(id: MediaId): android.net.Uri? = files.uriOf(id)
 
     /** Starts listening once the app has finished starting (the manager needs the app whole). */
     fun start() {
@@ -106,6 +138,10 @@ class Downloads(private val context: Context, private val scope: CoroutineScope)
             })
             refresh()
         }
+        scope.launch {
+            files.prune()
+            files.entries.collect { publish() }
+        }
     }
 
     fun keep(tracks: List<Track>) {
@@ -115,7 +151,10 @@ class Downloads(private val context: Context, private val scope: CoroutineScope)
         }
     }
 
-    fun forget(id: MediaId) = DownloadService.sendRemoveDownload(context, KeepService::class.java, id.value, false)
+    fun forget(id: MediaId) {
+        DownloadService.sendRemoveDownload(context, KeepService::class.java, id.value, false)
+        scope.launch { files.forget(id) }
+    }
 
     private fun refresh() {
         val map = LinkedHashMap<MediaId, Entry>()
@@ -135,16 +174,58 @@ class Downloads(private val context: Context, private val scope: CoroutineScope)
                 map[track.id] = Entry(track, status, progress)
             }
         }
-        _entries.value = map
+        downloading = map
+        publish()
+        exportWhole()
         // The manager says when a song starts and ends, not how far it's got: while any is under way, look again each second.
         if (busy && ticker?.isActive != true) ticker = scope.launch {
             while (isActive) {
                 delay(1000)
                 val inFlight = manager.currentDownloads
                 if (inFlight.isEmpty()) { refresh(); break }
-                _entries.value = _entries.value.mapValues { (id, e) ->
+                downloading = downloading.mapValues { (id, e) ->
                     inFlight.firstOrNull { it.request.id == id.value }?.let { d -> e.copy(status = Status.Keeping, progress = (d.percentDownloaded.takeIf { it >= 0f } ?: 0f) / 100f) } ?: e
                 }
+                publish()
+            }
+        }
+    }
+
+    /**
+     * What the screens see: a song is kept once it's whole on the phone, in the Music folder or still
+     * in the app's store while it's being written out there (it plays from either); writing it out is
+     * the app's own business, and shows nowhere.
+     */
+    private fun publish() {
+        val out = LinkedHashMap<MediaId, Entry>()
+        files.entries.value.forEach { (id, f) -> out[id] = Entry(f.track, Status.Kept, 1f) }
+        downloading.forEach { (id, e) -> if (id !in out) out[id] = e }
+        _entries.value = out
+    }
+
+    /**
+     * Each song whole in the app's store, written out to the Music folder one at a time, then let go
+     * of in the store, so a kept song takes its room once. One that can't be written out stays in the
+     * store, kept and playing, and isn't tried again this session.
+     */
+    private fun exportWhole() {
+        if (exporter?.isActive == true) return
+        exporter = scope.launch {
+            while (isActive) {
+                val next = downloading.values.firstOrNull { it.status == Status.Kept && it.track.id !in files.entries.value && it.track.id !in couldNot && it.track.id !in writing } ?: break
+                val id = next.track.id
+                writing += id
+                val lyrics = runCatching { lyricsOf(next.track) }.getOrNull()
+                val cover = runCatching { coverOf(next.track) }.getOrNull()
+                val written = files.export(next.track, lyrics, cover)
+                writing -= id
+                if (written != null) {
+                    // In the Music folder now: the store's copy goes, and the manager forgets it.
+                    DownloadService.sendRemoveDownload(context, KeepService::class.java, id.value, false)
+                } else {
+                    couldNot += id
+                }
+                publish()
             }
         }
     }

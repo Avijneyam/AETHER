@@ -1,5 +1,11 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.ui.profile
 
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import android.content.ClipData
 import android.content.ContentValues
 import android.content.Context
@@ -23,11 +29,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -239,7 +243,7 @@ fun MetalCardOverlay(export: CardExport, onSaved: (String) -> Unit) {
     }
 
     Box(Modifier.fillMaxSize().background(Ink.Black)) {
-        BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = 96.dp).navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility).padding(bottom = 96.dp).windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility), contentAlignment = Alignment.TopCenter) {
             val fit = with(LocalDensity.current) { minOf(maxWidth.toPx() / CanvasWidth, maxHeight.toPx() / CanvasHeight) }
             Box(
                 Modifier
@@ -277,7 +281,7 @@ fun MetalCardOverlay(export: CardExport, onSaved: (String) -> Unit) {
             }
         }
         Row(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 22.dp),
+            Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility).padding(bottom = 22.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {

@@ -31,4 +31,6 @@ tasks.register<JavaExec>("streamCheck") {
     description = "Resolves YouTube Music streams live and checks both ends of each serve audio."
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("app.aether.sources.youtube.StreamCheckKt")
+    // -Pids=a,b  -Pregion=IN  -Pcount=12  -Pdiagnose=true
+    args = listOf("ids", "region", "count", "diagnose").mapNotNull { name -> project.findProperty(name)?.let { "$name=$it" } }
 }

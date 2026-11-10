@@ -1,5 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.ui.profile
 
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import app.aether.core.designsystem.component.Icon
 import app.aether.core.designsystem.component.Glyph
 import androidx.compose.foundation.Canvas
@@ -16,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -191,7 +195,7 @@ private fun hoursLabel(minutes: Long): String = when {
 
 @Composable
 private fun Head(name: String, stats: ProfileStats?, photo: Artwork, onName: () -> Unit, onExport: () -> Unit) {
-    Column(Modifier.separate().fillMaxWidth().statusBarsPadding().padding(top = 44.dp, start = 20.dp, end = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.separate().fillMaxWidth().windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility).padding(top = 44.dp, start = 20.dp, end = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (!photo.isEmpty) {
             TreatedArtwork(photo, ArtTreatment.Print, Modifier.size(76.dp).clip(CircleShape), sizeHintPx = 240)
             Spacer(Modifier.height(16.dp))

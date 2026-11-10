@@ -1,5 +1,11 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.ui.lyrics
 
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -9,9 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -84,6 +88,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
+import app.aether.core.designsystem.component.GlassPill
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** What the lyrics view has to show. */
 private sealed interface Words {
@@ -111,8 +118,19 @@ private fun rememberWords(track: Track): Words {
     val consent by container.settings.timedLyrics.collectAsStateWithLifecycle()
     val service = rememberLyrics(track)
     val result by produceState<Words>(Words.Waiting, track.id, consent, service) {
+        // A song on the phone brings its own words first: its .lrc beside it, or the words in its file.
+        val onPhone = track.id.source == container.local.id
+        if (onPhone) container.localLyrics.of(track)?.let { found ->
+            value = shape(LyricsFormatter.forPlayback(found.lyrics, track.durationMs), found.credit)
+            return@produceState
+        }
         val request = LyricsRequest(key = track.id.toString(), title = track.title, artist = track.artistLine, album = track.album?.title, durationMs = track.durationMs)
         val answer = container.lyrics.lyrics(request)
+        // A kept song, offline or unanswered: the words it was kept with.
+        if (!onPhone && answer !is LyricsResult.Found) container.localLyrics.of(track)?.let { found ->
+            value = shape(LyricsFormatter.forPlayback(found.lyrics, track.durationMs), found.credit)
+            return@produceState
+        }
         val own: Words? = (service as? Load.Ready)?.value?.let { l ->
             val lines = l.text.lines().map { it.trim() }.filter { it.isNotEmpty() }
             if (lines.isEmpty()) null else shape(LyricsFormatter.forPlayback(Lyrics.Plain(lines), track.durationMs), l.source ?: "YouTube Music")
@@ -146,16 +164,47 @@ fun LyricsStage(track: Track, pane: DragState) {
     val position = container.playback.position.collectAsStateWithLifecycle()
     val playback by container.playback.state.collectAsStateWithLifecycle()
     val style by container.settings.lyricsStyle.collectAsStateWithLifecycle()
+    val romanise by container.settings.romanise.collectAsStateWithLifecycle()
     val asLine = style == 1
+    val asVerse = style == 2
     val positionNow = remember(container) { { container.playback.positionNow() } }
+    // Each line in Latin letters, worked out on the phone, off the main thread; null where a line needs none.
+    val timedLines = (words as? Words.Timed)?.lines
+    // Started afresh with each song, so a new song's lines never wear the last one's letters, even for a frame.
+    val glossState = remember(timedLines) { androidx.compose.runtime.mutableStateOf<List<String?>>(emptyList()) }
+    LaunchedEffect(timedLines) {
+        glossState.value = timedLines?.let { lines -> withContext(Dispatchers.Default) { Romaniser.lines(lines) } }.orEmpty()
+    }
+    val glosses = glossState.value
+    val readable = glosses.any { it != null }
+    val shownGlosses = if (romanise && readable) glosses else emptyList()
     Box(Modifier.fillMaxSize().background(Ink.Black)) {
         when (words) {
             Words.Waiting -> GridDots(Modifier.align(Alignment.Center))
-            is Words.Timed -> if (asLine) {
-                val script = remember(words.lines, track.durationMs) { LineScript.synced(words.lines, track.durationMs) }
-                ContinuousLine(positionNow, script, track.id.toString(), playback.isPlaying, "Lyrics of ${track.title}, written as one line")
-            } else {
-                Constellations(words.lines, position, playback.isPlaying, Modifier.fillMaxSize())
+            is Words.Timed -> when {
+                asLine -> {
+                    // The hand writes Latin letters: in another script, it writes the words as they're read.
+                    val lines = remember(words.lines, shownGlosses) {
+                        if (shownGlosses.isEmpty()) words.lines
+                        else words.lines.mapIndexed { i, l -> shownGlosses.getOrNull(i)?.let { g -> l.copy(text = g, words = emptyList(), background = null) } ?: l }
+                    }
+                    val script = remember(lines, track.durationMs) { LineScript.synced(lines, track.durationMs) }
+                    ContinuousLine(positionNow, script, track.id.toString(), playback.isPlaying, "Lyrics of ${track.title}, written as one line")
+                }
+                asVerse -> {
+                    Verse(
+                        words.lines,
+                        shownGlosses,
+                        positionNow,
+                        playback.isPlaying,
+                        onSeek = { container.playback.seekTo(it) },
+                        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility).padding(top = 44.dp),
+                    )
+                    // The page goes into the black under the song's name and above its credit, as a page under glass.
+                    Box(Modifier.fillMaxWidth().height(170.dp).align(Alignment.TopCenter).background(Brush.verticalGradient(0.45f to Ink.Black, 1f to Color.Transparent)))
+                    Box(Modifier.fillMaxWidth().height(150.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(0f to Color.Transparent, 0.6f to Ink.Black)))
+                }
+                else -> Constellations(words.lines, if (shownGlosses.isEmpty()) null else Romaniser.japanese(words.lines.map { it.text }), position, playback.isPlaying, Modifier.fillMaxSize())
             }
             is Words.Untimed -> Untimed(words.lines, Modifier.fillMaxSize())
             Words.Instrumental -> if (asLine) {
@@ -167,19 +216,33 @@ fun LyricsStage(track: Track, pane: DragState) {
             }
             is Words.Silent -> Quiet(words.title, words.body, Modifier.align(Alignment.Center))
         }
-        Column(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility).padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Grabber(pane, touchHeight = 22.dp)
             Spacer(Modifier.height(8.dp))
-            Txt(track.title, Type.Label, color = Ink.Grey, upper = true, maxLines = 1, modifier = Modifier.padding(horizontal = 40.dp))
+            Txt(track.title, Type.Label, color = Ink.Grey, upper = true, maxLines = 1, modifier = Modifier.padding(horizontal = 96.dp))
+        }
+        // Words in another script can be read in Latin letters as well: the key says so, and is lit when they are.
+        if (readable) {
+            GlassPill(
+                "Latin",
+                onClick = { container.settings.setRomanise(!romanise) },
+                lit = romanise,
+                small = true,
+                modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility).padding(top = 12.dp, end = 16.dp),
+            )
         }
         val credit = when (words) {
-            is Words.Timed -> "Words: ${words.credit}" + if (words.estimated) "  ·  timed by AETHER" else ""
+            is Words.Timed -> "Words: ${words.credit}" + when {
+                words.estimated -> "  ·  timed by AETHER"
+                words.lines.any { it.words.isNotEmpty() } -> "  ·  word by word"
+                else -> ""
+            }
             is Words.Untimed -> "Words: ${words.credit}"
             Words.Instrumental -> if (asLine) "Instrumental" else null
             else -> null
         }
         if (credit != null) {
-            Txt(credit, Type.Label, color = Ink.Dim, upper = true, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp))
+            Txt(credit, Type.Label, color = Ink.Dim, upper = true, modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility).padding(bottom = 18.dp))
         }
     }
 }
@@ -203,18 +266,20 @@ private fun Untimed(lines: List<String>, modifier: Modifier) {
     }
 }
 
-/** A word's star, where it is in the sky, and when it's sung. */
-private class Star(val at: Offset, val word: String, val start: Long)
+/** A word's star, where it is in the sky, when it's sung, and how it reads beside its star (in Latin letters, when asked for). */
+private class Star(val at: Offset, val word: String, val start: Long, val reading: String)
 
 /** A line's constellation: its stars, where it's centred, and when it's sung. */
 private class Figure(val centre: Offset, val stars: List<Star>, val start: Long, val end: Long)
 
 /**
  * Charts the sky: each sung line a figure, its words left to right with a wandering rise and fall,
- * each figure a screen's width from the last in a heading that wanders too. Deterministic: the same
- * song always makes the same sky.
+ * each figure a screen's width from the last in a heading that wanders too. A phrase in a script
+ * written without spaces (Chinese, Japanese) is a star to each character, as it's sung. With
+ * [japanese] given (romanisation asked for), each star's small word is its reading in Latin letters.
+ * Deterministic: the same song always makes the same sky.
  */
-private fun chart(lines: List<LyricsLine>, w: Float, h: Float): List<Figure> {
+private fun chart(lines: List<LyricsLine>, w: Float, h: Float, japanese: Boolean?): List<Figure> {
     val figures = ArrayList<Figure>()
     var centre = Offset.Zero
     var heading = 0f
@@ -222,22 +287,22 @@ private fun chart(lines: List<LyricsLine>, w: Float, h: Float): List<Figure> {
     lines.forEachIndexed { i, line ->
         if (line.text.isBlank()) return@forEachIndexed
         val next = lines.drop(i + 1).firstOrNull()?.startMs
-        val words = WordTiming.words(line)
-        if (words.isEmpty()) return@forEachIndexed
-        val starts = WordTiming.starts(line, next)
+        val units = WordTiming.units(line, next)
+        if (units.isEmpty()) return@forEachIndexed
         val end = WordTiming.end(line, next)
         val rnd = Random(i * 7919 + 17)
         if (n > 0) {
             heading = (heading + (rnd.nextFloat() - 0.5f) * 2.1f).coerceIn(-1.25f, 1.25f)
             centre += Offset(cos(heading), sin(heading) * 0.85f) * (w * 0.95f)
         }
-        val k = words.size
+        val k = units.size
         val spread = min(w * 0.74f, k * w * 0.15f)
         var y = 0f
-        val stars = words.mapIndexed { j, word ->
+        val stars = units.mapIndexed { j, unit ->
             val x = if (k == 1) 0f else -spread / 2f + spread * j / (k - 1) + (rnd.nextFloat() - 0.5f) * w * 0.05f
             y = (y + (rnd.nextFloat() - 0.5f) * h * 0.16f).coerceIn(-h * 0.17f, h * 0.17f)
-            Star(centre + Offset(x, y), word, starts.getOrElse(j) { line.startMs })
+            val reading = japanese?.let { Romaniser.romanise(unit.text, it) } ?: unit.text
+            Star(centre + Offset(x, y), unit.text, unit.startMs, reading)
         }
         figures += Figure(centre, stars, line.startMs, end)
         n++
@@ -301,13 +366,13 @@ private fun DrawScope.stamp(image: ImageBitmap, at: Offset, extent: Float, alpha
 private fun FluidSpring.progress(ms: Long): Float = if (ms <= 0) 0f else (1f + solve(-1f, 0f, ms / 1000f).first)
 
 @Composable
-private fun Constellations(lines: List<LyricsLine>, position: State<Long>, playing: Boolean, modifier: Modifier) {
+private fun Constellations(lines: List<LyricsLine>, japanese: Boolean?, position: State<Long>, playing: Boolean, modifier: Modifier) {
     val measurer = rememberTextMeasurer()
     val reduce = LocalReduceMotion.current
     BoxWithConstraints(modifier) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
-        val figures = remember(lines, w, h) { chart(lines, w, h) }
+        val figures = remember(lines, w, h, japanese) { chart(lines, w, h, japanese) }
         val dust = remember(w, h) {
             val rnd = Random(2026)
             List(150) { Dust(rnd.nextFloat() * w, rnd.nextFloat() * h, 0.6f + rnd.nextFloat() * 1.2f, 0.08f + rnd.nextFloat() * 0.32f, rnd.nextFloat() * 6.28f) }
@@ -341,7 +406,7 @@ private fun Constellations(lines: List<LyricsLine>, position: State<Long>, playi
                     measuredUpTo = current
                     for (fi in current..minOf(current + 1, figures.lastIndex)) figures[fi].stars.forEach { star ->
                         label(measurer, labels, star.word, big = true, density = density)
-                        label(measurer, labels, star.word, big = false, density = density)
+                        label(measurer, labels, star.reading, big = false, density = density)
                     }
                 }
                 val target = figures.getOrNull(current)?.centre ?: Offset.Zero
@@ -417,7 +482,7 @@ private fun DrawScope.drawFigure(f: Figure, live: Boolean, t: Long, alpha: Float
         // When this word stopped being the one sung: the next word's start, or the line's end.
         val over = if (j + 1 < shown) f.stars[j + 1].start else if (live && t >= f.end) f.end else Long.MAX_VALUE
         val singing = live && t < over
-        val small = label(measurer, labels, s.word, big = false, density = this)
+        val small = label(measurer, labels, s.reading, big = false, density = this)
         if (singing) {
             val since = t - s.start
             val pop = PopSpring.progress(since)

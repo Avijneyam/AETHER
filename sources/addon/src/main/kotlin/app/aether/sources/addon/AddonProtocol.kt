@@ -26,6 +26,11 @@ data class AddonManifest(
     val settings: List<AddonSetting> = emptyList(),
     /** Whether the addon lets its streams be saved for offline listening. AETHER only streams from addons. */
     val allowsDownloads: Boolean = false,
+    /**
+     * The addon answers only BitChord's own app (`bitchordAuth`), which proves itself with a key that
+     * Android vouches for. AETHER can't, and doesn't pretend to: such an addon isn't added.
+     */
+    val onlyForBitChord: Boolean = false,
 ) {
     val canSearch: Boolean get() = RESOURCE_SEARCH in resources
     val canStream: Boolean get() = RESOURCE_STREAM in resources
@@ -34,9 +39,29 @@ data class AddonManifest(
     fun settle(values: Map<String, String>): Map<String, String> =
         settings.mapNotNull { s -> s.accept(values[s.key])?.let { s.key to it } }.toMap()
 
+    /**
+     * What goes with every request (the protocol's settings passthrough, as BitChord's host sends it):
+     * each declared setting at the listener's value or its default, and `quality` at the best the
+     * addon offers, which its declared choices list first, unless the listener chose another. An addon
+     * that declares no quality setting is asked for `LOSSLESS`, as the reference host asks; one that
+     * never reads it behaves as before.
+     */
+    fun query(values: Map<String, String>): Map<String, String> {
+        val out = LinkedHashMap(settle(values))
+        val quality = settings.firstOrNull { it.key == QUALITY }
+        out[QUALITY] = when {
+            quality == null -> LOSSLESS
+            values[QUALITY] != null && quality.options.any { it.value == values[QUALITY] } -> values.getValue(QUALITY)
+            else -> quality.options.firstOrNull()?.value ?: quality.default ?: LOSSLESS
+        }
+        return out
+    }
+
     companion object {
         const val RESOURCE_SEARCH = "search"
         const val RESOURCE_STREAM = "stream"
+        const val QUALITY = "quality"
+        const val LOSSLESS = "LOSSLESS"
     }
 }
 
@@ -82,6 +107,12 @@ internal data class AddonTrack(
     val durationMs: Long?,
     val isrc: String?,
     val explicit: Boolean?,
+    /** The row's own stream, when the addon gives one: the `/stream` call is then skipped (BitChord's protocol). */
+    val streamUrl: String? = null,
+    /** What the row says it is (`LOSSLESS`, `HI_RES_LOSSLESS`, `flac`): a claim, used only to order copies. */
+    val quality: String? = null,
+    /** An immersive mix (Dolby Atmos, 360) rather than the stereo one: never taken for the stereo song. */
+    val immersive: Boolean = false,
 )
 
 /** An addon's answer for one song's stream. */
@@ -93,6 +124,14 @@ internal data class AddonStream(
     val encrypted: Boolean,
     val headers: Map<String, String>,
     val expiresAtMillis: Long?,
+    /** What the address is: the audio itself, or a DASH or HLS manifest of it. */
+    val manifest: String? = null,
+    val codec: String? = null,
+    val sampleRateHz: Int? = null,
+    val bitDepth: Int? = null,
+    val bitrateKbps: Int? = null,
+    /** The addon answered, but with no stream and why (`"error": "…"`): a miss, and its reason. */
+    val error: String? = null,
 )
 
 /**
@@ -119,9 +158,11 @@ internal object AddonProtocol {
             name = name ?: id!!,
             version = o["version"].text()?.take(MAX_NAME),
             description = o["description"].text()?.take(MAX_DESCRIPTION),
-            resources = resources ?: setOf(AddonManifest.RESOURCE_SEARCH, AddonManifest.RESOURCE_STREAM),
+            // An addon that declares nothing is taken to do both, as BitChord takes it.
+            resources = resources?.takeIf { it.isNotEmpty() } ?: setOf(AddonManifest.RESOURCE_SEARCH, AddonManifest.RESOURCE_STREAM),
             settings = settings,
             allowsDownloads = o["allowDownloads"].flag() == true,
+            onlyForBitChord = o["bitchordAuth"].flag() == true,
         )
     }
 
@@ -209,6 +250,8 @@ internal object AddonProtocol {
         val durationMs = o["durationMs"].number()?.toLong()
             ?: o["duration"].number()?.let { if (it > MAX_SECONDS) it.toLong() else (it * 1000).toLong() }
             ?: o["duration"].text()?.let(::clock)
+        val modes = (o["audioModes"] as? JsonArray)?.mapNotNull { it.text() }.orEmpty() + listOfNotNull(o["audioMode"].text())
+        val quality = (o["audioQuality"] ?: o["quality"] ?: o["format"]).text()
         return AddonTrack(
             id = id,
             title = title.take(MAX_NAME),
@@ -217,6 +260,10 @@ internal object AddonProtocol {
             durationMs = durationMs?.takeIf { it > 0 },
             isrc = o["isrc"].text(),
             explicit = o["explicit"].flag(),
+            streamUrl = (o["streamURL"] ?: o["streamUrl"]).text()?.takeIf { it.startsWith("https://") || it.startsWith("http://") },
+            quality = quality?.take(MAX_NAME),
+            immersive = o["atmos"].flag() == true || modes.any { IMMERSIVE.containsMatchIn(it) } ||
+                quality?.let { IMMERSIVE.containsMatchIn(it) } == true,
         )
     }
 
@@ -227,23 +274,60 @@ internal object AddonProtocol {
         return parts.fold(0L) { acc, n -> acc * 60 + n } * 1000
     }
 
+    /**
+     * One song's stream, read as BitChord's protocol writes it. The transport is what `manifest` says
+     * (`dash`, `hls` or `none`), or `mediaType`, or, as live addons send it, the word `dash` or `hls`
+     * in `format`; a codec or container there (`flac`, `mp4`) means a plain file. `encrypted` is
+     * `false` or the name of a scheme, and anything but false is refused. An answer with no address
+     * and an `error` is a miss that says why.
+     */
     fun stream(bytes: ByteArray): AddonStream? {
         val o = parse(bytes) as? JsonObject ?: return null
-        val url = (o["url"] ?: o["streamUrl"] ?: o["stream"]).text() ?: return null
+        val url = (o["url"] ?: o["streamUrl"] ?: o["streamURL"] ?: o["stream"]).text()
+        val error = o["error"].text()?.take(MAX_DESCRIPTION)
+        if (url == null) return error?.let { AddonStream("", null, null, null, false, emptyMap(), null, error = it) }
         val headers = (o["headers"] as? JsonObject)?.entries
             ?.mapNotNull { (k, v) -> v.text()?.let { k to it } }
             ?.filter { (k, v) -> HEADER_NAME.matches(k) && '\n' !in v && '\r' !in v }
             ?.take(MAX_HEADERS)?.toMap().orEmpty()
         val expires = (o["expiresAt"] ?: o["expires"])?.number()?.toLong()?.let { if (it < 100_000_000_000L) it * 1000 else it }
+        val format = o["format"].text()?.lowercase()
+        val transport = listOfNotNull(o["manifest"].text(), o["mediaType"].text(), format).firstNotNullOfOrNull { stated ->
+            when (stated.lowercase()) {
+                "dash", "mpd", "application/dash+xml" -> "dash"
+                "hls", "m3u8", "application/x-mpegurl", "application/vnd.apple.mpegurl" -> "hls"
+                "none" -> "none"
+                else -> null
+            }
+        }
+        val qualityText = listOfNotNull(o["quality"].text(), o["streamQuality"].text(), o["audioQuality"].text(), format).joinToString(" ")
+        val rate = o["sampleRate"].number()?.let { if (it < 1000) it * 1000 else it }?.toInt()
+            ?: KHZ.find(qualityText)?.groupValues?.get(1)?.toDoubleOrNull()?.let { (it * 1000).toInt() }
+        val depth = o["bitDepth"].number()?.toInt()?.takeIf { it in 8..32 }
+            ?: BITS.find(qualityText)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 8..32 }
         return AddonStream(
             url = url,
-            format = (o["format"] ?: o["manifest"] ?: o["type"]).text()?.lowercase(),
+            format = format,
             quality = o["quality"].text()?.take(MAX_NAME),
             mimeType = (o["mimeType"] ?: o["mime"]).text(),
-            encrypted = o["encrypted"].flag() == true || o["drm"].flag() == true,
+            encrypted = isEncrypted(o["encrypted"]) || isEncrypted(o["drm"]),
             headers = headers,
             expiresAtMillis = expires,
+            manifest = transport,
+            codec = (o["codec"] ?: o["fileCodec"]).text()?.lowercase(),
+            sampleRateHz = rate?.takeIf { it in 8_000..768_000 },
+            bitDepth = depth,
+            bitrateKbps = o["bitrate"].number()?.let { if (it > 3_000) it / 1000 else it }?.toInt()?.takeIf { it > 0 },
+            error = error,
         )
+    }
+
+    /** `false`, `"none"` or nothing: open. `true`, or the name of any scheme: encrypted. */
+    private fun isEncrypted(e: JsonElement?): Boolean {
+        val p = e as? JsonPrimitive ?: return false
+        p.booleanOrNull?.let { return it }
+        val text = p.contentOrNull?.trim()?.lowercase() ?: return false
+        return text.isNotEmpty() && text != "false" && text != "none" && text != "0" && text != "null"
     }
 
     private fun JsonElement?.text(): String? = (this as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
@@ -256,6 +340,9 @@ internal object AddonProtocol {
         p.booleanOrNull ?: p.longOrNull?.let { it != 0L } ?: p.contentOrNull?.lowercase()?.toBooleanStrictOrNull()
     }
 
+    private val IMMERSIVE = Regex("""atmos|dolby|360|eac3[_-]?joc|ec-?3""", RegexOption.IGNORE_CASE)
+    private val KHZ = Regex("""([\d.]+)\s*kHz""", RegexOption.IGNORE_CASE)
+    private val BITS = Regex("""(\d{1,2})\s*-?\s*bit""", RegexOption.IGNORE_CASE)
     private val SETTING_KEY = Regex("[A-Za-z0-9_.-]{1,64}")
     private val HEADER_NAME = Regex("[A-Za-z0-9-]{1,64}")
     private const val MAX_NAME = 300

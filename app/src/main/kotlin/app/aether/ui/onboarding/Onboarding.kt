@@ -1,5 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aether.ui.onboarding
 
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import android.Manifest
 import android.content.pm.PackageManager
 import android.view.TextureView
@@ -19,7 +24,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -168,7 +172,7 @@ fun Onboarding(onDone: () -> Unit, modifier: Modifier = Modifier) {
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .navigationBarsPadding()
+                    .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
                     .padding(horizontal = Space.edge)
                     .padding(bottom = 20.dp)
                     .graphicsLayer {

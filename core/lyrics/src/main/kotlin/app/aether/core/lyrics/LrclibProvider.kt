@@ -19,7 +19,8 @@ import java.util.concurrent.Executors
 
 /** What a provider found for one request (the repository turns it into a [LyricsResult]). */
 sealed interface ProviderAnswer {
-    data class Found(val lyrics: Lyrics) : ProviderAnswer
+    /** [credit]: who the words came from, when the provider asked others (a chain of libraries). */
+    data class Found(val lyrics: Lyrics, val credit: LyricsAttribution? = null) : ProviderAnswer
     data object NotFound : ProviderAnswer
     data object Offline : ProviderAnswer
     /** The service asked Podium to slow down; nothing more is asked of it for [retryInMs]. */

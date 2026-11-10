@@ -24,6 +24,9 @@ dependencies {
     api(project(":core:model"))
     api(libs.media3.session)
     implementation(libs.media3.exoplayer)
+    // A source's copy may come as a DASH or HLS manifest (Hi-Res copies often do): open media only.
+    implementation(libs.media3.exoplayer.dash)
+    implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.common)
     implementation(libs.media3.datasource)
     implementation(libs.media3.datasource.okhttp)
@@ -32,5 +35,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.guava)
     implementation(libs.androidx.core.ktx)
     testImplementation(libs.junit)
+    // A kept file's words read back as any player reads them.
+    testImplementation(project(":core:lyrics"))
     testImplementation(libs.kotlin.test)
 }

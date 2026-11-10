@@ -85,8 +85,19 @@ fun songsIncluded(folders: List<MusicFolder>, selection: FolderSelection): Int =
 /** "1 song", "12 songs". */
 fun songCount(n: Int): String = if (n == 1) "1 song" else "$n songs"
 
-/** A song on the phone and the folder it's in. */
-data class PhoneSong(val track: Track, val folder: String)
+/**
+ * A song on the phone and the folder it's in, with what the phone knows of its album: which album it
+ * is ([albumKey], the phone's own), whose ([albumArtist], where the file says), which disc of it, and
+ * when the song came onto the phone (seconds).
+ */
+data class PhoneSong(
+    val track: Track,
+    val folder: String,
+    val albumKey: String? = null,
+    val albumArtist: String? = null,
+    val disc: Int = 0,
+    val addedAt: Long = 0,
+)
 
 /** The music on the phone itself, read from the folders the listener chose. */
 interface PhoneLibrary {

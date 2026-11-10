@@ -4,20 +4,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,13 +25,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.aether.core.designsystem.art.gentleEdgeRefraction
 import app.aether.core.designsystem.component.FolderFile
 import app.aether.core.designsystem.component.GlassPill
 import app.aether.core.designsystem.component.Glyph
 import app.aether.core.designsystem.component.Loading
 import app.aether.core.designsystem.component.Notice
-import app.aether.core.designsystem.component.SectionHeading
 import app.aether.core.designsystem.theme.Space
 import app.aether.core.designsystem.theme.separate
 import app.aether.core.model.songCount
@@ -139,32 +133,6 @@ internal fun rememberPhoneMusic(): PhoneMusic {
             selection = selection,
             kept = kept,
         )
-    }
-}
-
-/** On Home: offline music as a playlist of its own, and the folders it's made of, up where they can be seen. */
-@Composable
-fun OnThisPhoneShelf(modifier: Modifier = Modifier) {
-    val music = rememberPhoneMusic()
-    val rowState = rememberLazyListState()
-    val cards = remember(music) {
-        buildList {
-            add(music.allCard)
-            if (music.kept.isNotEmpty()) add(music.keptCard)
-            foldersInside("", music.chosen).forEach { add(music.card(it)) }
-        }
-    }
-    Column(modifier.separate().fillMaxWidth().padding(top = 52.dp)) {
-        SectionHeading("On this phone", strapline = "Plays without a connection")
-        Spacer(Modifier.height(18.dp))
-        LazyRow(
-            state = rowState,
-            modifier = Modifier.fillMaxWidth().gentleEdgeRefraction(rowState),
-            contentPadding = PaddingValues(horizontal = Space.edge, vertical = 22.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            items(cards, key = { it.preview.key }) { FolderLink(it.preview, it.route) }
-        }
     }
 }
 

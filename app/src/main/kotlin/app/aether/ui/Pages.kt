@@ -97,6 +97,13 @@ val LocalPage = staticCompositionLocalOf<PageEntry?> { null }
  */
 val LocalRoomsHidden = staticCompositionLocalOf<() -> Boolean> { { false } }
 
+/**
+ * Whether this page is on show and at rest: nothing over it, the rooms' rail still, and no page of its
+ * room sliding in or away. What changes by itself on a page (Listen's figures) waits for this, so that
+ * it never asks for work while the screen is moving.
+ */
+val LocalPageSettled = staticCompositionLocalOf<() -> Boolean> { { true } }
+
 /** Stays composed and measured, and is placed (so drawn, and touchable) only while [show] says so. */
 fun Modifier.placedWhile(show: () -> Boolean): Modifier = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
@@ -231,6 +238,7 @@ private fun Page(
     }
     DisposableEffect(page) { onDispose { if (!root) holder.removeState(page.id) } }
     val hidden = remember(page, tab) { { paused() || nav.tab != tab || nav.topOf(tab) !== page } }
+    val settled = remember(page, tab) { { !hidden() && !nav.rail.moving && nav.pagesOf(tab).none { it.slide.isRunning } } }
     val waitingNow by remember(page, above) { derivedStateOf { page.phase == PagePhase.Kept || above?.landed == true } }
     // The shadow along its leading edge, drawn beside the page rather than in it, so that the page's
     // picture holds only the page. There only while it's on its way.
@@ -265,7 +273,7 @@ private fun Page(
             .then(if (above == null && page.phase != PagePhase.Kept) Modifier else Modifier.clearAndSetSemantics { })
             .background(Ink.Black),
     ) {
-        CompositionLocalProvider(LocalPage provides page, LocalRoomsHidden provides hidden) {
+        CompositionLocalProvider(LocalPage provides page, LocalRoomsHidden provides hidden, LocalPageSettled provides settled) {
             holder.SaveableStateProvider(page.id) { Screen(page.route) }
         }
     }
@@ -308,6 +316,7 @@ private fun Screen(route: Route) {
         Route.Equaliser -> app.aether.ui.settings.EqualiserScreen()
         is Route.OnThisPhone -> app.aether.ui.library.OnThisPhoneScreen(route.path)
         Route.Kept -> app.aether.ui.library.KeptScreen()
+        is Route.OfflineAlbum -> app.aether.ui.library.OfflineAlbumScreen(route.album)
         is Route.MusicFolders -> app.aether.ui.settings.MusicFoldersScreen(route.path)
     }
 }

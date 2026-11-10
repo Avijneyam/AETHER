@@ -13,6 +13,8 @@ import app.aether.core.model.Outcome
 import app.aether.core.model.PlayRecorder
 import app.aether.core.model.QueueStore
 import app.aether.core.model.Stream
+import app.aether.core.model.StreamPurpose
+import app.aether.core.model.Track
 import app.aether.player.PlaybackConnection
 import app.aether.core.data.EqualiserStore
 import app.aether.core.model.EqProfile
@@ -40,6 +42,17 @@ import app.aether.core.lyrics.FileLyricsCache
 import app.aether.core.lyrics.LrclibProvider
 import app.aether.core.lyrics.LyricsHttp
 import app.aether.core.lyrics.LyricsRepository
+import app.aether.core.lyrics.LyricsChain
+import app.aether.core.lyrics.LyricsRequest
+import app.aether.core.lyrics.LyricsResult
+import app.aether.core.lyrics.LrcWriter
+import app.aether.core.lyrics.LyricsProvider
+import app.aether.core.lyrics.LrcRed
+import app.aether.core.lyrics.BiniLyrics
+import app.aether.core.lyrics.BetterLyrics
+import app.aether.core.lyrics.LyricsPlus
+import app.aether.core.lyrics.Unison
+import app.aether.core.lyrics.KuGou
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.File
@@ -53,6 +66,7 @@ import app.aether.core.model.ArtistArtProvider
 import app.aether.sources.apple.AppleArt
 import app.aether.sources.apple.ArtHttp
 import kotlinx.coroutines.launch
+import app.aether.update.UpdateCenter
 
 /** Everything the app is made of, built once. Screens reach it through `LocalContainer`. */
 class Container(app: Application) {
@@ -76,22 +90,45 @@ class Container(app: Application) {
         YouTubeMusic(language = language, region = region, session = { account.cookies.value?.let(WebSession::parse) }),
         YouTubeStreamResolver(http, region),
     )
-    val local = LocalSource(app)
+    // Kept songs written out to the Music folder are AETHER's own: listed under Kept, not twice.
+    val local = LocalSource(app) { uri -> downloads.files.isKept(uri) }
     val sources = SourceManager(listOf(youtube, local), primaryId = youtube.id)
     val catalog = Catalog()
     val playback = PlaybackConnection(app, scope)
 
-    /** Songs kept on the phone to play offline. */
-    val downloads = Downloads(app, scope).also { it.start() }
+    /**
+     * Songs kept on the phone to play offline, each a file in the listener's Music folder with its
+     * words and cover in its tags (the words only when timed lyrics are on, the cover as the source has it).
+     */
+    val downloads = Downloads(
+        app,
+        scope,
+        lyricsOf = { t ->
+            val answer = lyrics.lyrics(LyricsRequest(t.id.toString(), t.title, t.artistLine, t.album?.title, t.durationMs))
+            (answer as? LyricsResult.Found)?.lyrics?.let(LrcWriter::write)
+        },
+        coverOf = { t ->
+            val url = t.artwork.url(1200) ?: return@Downloads null
+            withContext(Dispatchers.IO) {
+                runCatching { http.newCall(Request.Builder().url(url).header("User-Agent", UserAgent).build()).await().use { r -> if (r.isSuccessful) r.body?.bytes()?.takeIf { it.size < 4 * 1024 * 1024 } else null } }.getOrNull()
+            }
+        },
+    ).also { it.start() }
+
+    /** Lyrics already on the phone: a song's .lrc, the words in its file, a kept song's own. */
+    val localLyrics = LocalLyrics(app, local, settings) { id -> downloads.keptFile(id) }
 
     /** Kept playlists and albums go on being kept: what's added to them later comes down on Wi-Fi. */
     val keepSync = KeepSync(app, scope, sources, library, downloads, settings).also { it.start() }
+
+    /** AETHER's own updates, from its GitHub releases (PODIUM's update check), off the main thread. */
+    val updates: UpdateCenter = UpdateCenter.of(app, CoroutineScope(SupervisorJob() + Dispatchers.IO))
 
     init {
         // The listener's own sources, reconnected by their addresses.
         scope.launch {
             settings.addons.value.forEach { address ->
-                (AddonSource.connect(address, http) as? Outcome.Ok)?.value?.let(sources::register)
+                (AddonSource.connect(address, http) { settings.addonChoices(address) } as? Outcome.Ok)?.value?.let(sources::register)
             }
         }
     }
@@ -99,7 +136,7 @@ class Container(app: Application) {
     private val appleArt = AppleArt(
         ArtHttp { url ->
             withContext(Dispatchers.IO) {
-                http.newCall(Request.Builder().url(url).header("User-Agent", "AETHER/0.1 (Android music player)").build()).execute().use {
+                http.newCall(Request.Builder().url(url).header("User-Agent", UserAgent).build()).execute().use {
                     if (it.isSuccessful) it.body?.string() else null
                 }
             }
@@ -113,18 +150,47 @@ class Container(app: Application) {
     /** An album's film and the lettering of who made it, on the same terms. */
     val albumArt: AlbumArtProvider = appleArt
 
-    /** Timed lyrics from LRCLIB (PODIUM's lyrics layer), cached on the phone, asked only with the listener's consent. */
+    /** Lyrics libraries are asked quickly: words that come after the second chorus are no use to anyone. */
+    private val lyricsHttp: LyricsHttp = object : LyricsHttp {
+        private val client = http.newBuilder().callTimeout(6, TimeUnit.SECONDS).connectTimeout(4, TimeUnit.SECONDS).build()
+        override suspend fun get(url: String): Pair<Int, String> = reply(url).let { it.code to it.body }
+        override suspend fun reply(url: String): LyricsHttp.Reply {
+            val request = Request.Builder().url(url).header("User-Agent", UserAgent).header("Accept", "application/json, text/xml, */*").build()
+            return client.newCall(request).await().use { r ->
+                LyricsHttp.Reply(r.code, r.body?.string().orEmpty(), r.header("Retry-After")?.toLongOrNull())
+            }
+        }
+    }
+
+    private val lrclib = LrclibProvider(lyricsHttp)
+
+    /**
+     * The lyrics libraries, as BitChord and LastWave ask them: those that time words first (Apple's
+     * timings through lrc.red, BiniLyrics and BetterLyrics, then LyricsPlus and Unison), then those
+     * that time lines (LRCLIB, KuGou). All are asked at once and the best answer kept.
+     */
+    private val libraries: List<LyricsProvider> = listOf(
+        LrcRed(lyricsHttp),
+        BiniLyrics(lyricsHttp),
+        BetterLyrics(lyricsHttp),
+        LyricsPlus(lyricsHttp),
+        Unison(lyricsHttp),
+        lrclib,
+        KuGou(lyricsHttp),
+    )
+
+    /**
+     * Timed lyrics from the libraries above (PODIUM's lyrics layer, BitChord's sources), cached on the
+     * phone, asked only with the listener's consent and only of the libraries they leave on.
+     */
     val lyrics = LyricsRepository(
-        provider = LrclibProvider(
-            LyricsHttp { url ->
-                withContext(Dispatchers.IO) {
-                    http.newCall(Request.Builder().url(url).header("User-Agent", "AETHER/0.1 (Android music player)").build()).execute().use { it.code to (it.body?.string() ?: "") }
-                }
-            },
-        ),
+        provider = LyricsChain({ libraries.filter { it.id !in settings.lyricsSourcesOff.value } }),
         cache = FileLyricsCache(File(app.cacheDir, "lyrics")),
         consent = { settings.timedLyrics.value },
     )
+
+    /** Every library, in the order it's preferred, for Settings. */
+    val lyricsLibraries: List<LyricsProvider> get() = libraries
 }
 
 class AetherApp : Application(), PlaybackEnvironment, SingletonImageLoader.Factory {
@@ -138,12 +204,20 @@ class AetherApp : Application(), PlaybackEnvironment, SingletonImageLoader.Facto
 
     // --- The engine's needs ---
 
-    override suspend fun stream(id: MediaId): Outcome<Stream> = container.sources.stream(id, container.settings.efficient.value)
+    override suspend fun stream(id: MediaId, purpose: StreamPurpose, track: Track?): Outcome<Stream> =
+        container.sources.stream(id, container.settings.efficient.value, purpose, track)
     override fun invalidate(id: MediaId) = container.sources.invalidate(id)
+    override fun keptFile(id: MediaId): android.net.Uri? = container.downloads.keptFile(id)
     override val queueStore: QueueStore get() = container.queueStore
     override val recorder: PlayRecorder get() = container.library
     override val http: OkHttpClient get() = container.http
     override val equaliser: StateFlow<EqProfile?> get() = container.equaliser.shaping
+    override val crossfadeSeconds: StateFlow<Int> get() = container.settings.crossfade
+    override val lateCopies: kotlinx.coroutines.flow.Flow<MediaId> get() = container.sources.lateCopies
+    override fun lateCopy(id: MediaId): Stream? = container.sources.lateCopy(id)
+    override fun hearingCopy(id: MediaId, hearing: Boolean) = if (hearing) container.sources.hearing(id) else container.sources.notHearing(id)
+    override fun adoptCopy(id: MediaId): Boolean = container.sources.adopt(id)
+    override fun dropLateCopy(id: MediaId) = container.sources.dropLate(id)
 
     override fun sessionActivity(): PendingIntent? = PendingIntent.getActivity(
         this,
