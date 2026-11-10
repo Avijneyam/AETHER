@@ -213,8 +213,8 @@ internal val Rising = Motion.fluid(0.7f, 1f, 0.002f)
 
 /**
  * A short film, looping and silent, in black and white unless told otherwise. It never touches the music: it
- * has no sound, asks for no audio focus, and is limited to the screen's width (less on a metered
- * connection). What's been fetched is kept, so it starts at once the next time. It rests when it's
+ * has no sound, asks for no audio focus, and plays at the best quality that fits the screen's width (half
+ * of it on a metered connection), from its first frame. What's been fetched is kept, so it starts at once the next time. It rests when it's
  * out of sight or the app is, and is let go when the page is.
  */
 @OptIn(UnstableApi::class)
@@ -232,7 +232,12 @@ internal fun HeroFilm(url: String, playing: Boolean, onFirstFrame: () -> Unit, m
         ExoPlayer.Builder(context).build().apply {
             trackSelectionParameters = trackSelectionParameters.buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-                .setMaxVideoSize(side, side)
+                // As wide as the screen, and as tall as a portrait film needs (a square cap took a tall
+                // film's 1080 x 1920 down to its 608 x 1080 copy).
+                .setMaxVideoSize(side, side * 2)
+                // The best that fits, from the first frame: a film only plays on a fast connection, and a
+                // short loop never ran long enough for the player to climb from where it guessed low.
+                .setForceHighestSupportedBitrate(true)
                 .build()
             setMediaSource(
                 HlsMediaSource.Factory(data).createMediaSource(

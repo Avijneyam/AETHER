@@ -2,6 +2,13 @@
 
 package app.aether.ui.library
 
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.gestures.detectTapGestures
+import app.aether.ui.common.ConfirmDialog
+import app.aether.ui.common.PageAction
+import app.aether.ui.common.PageMenu
+import app.aether.ui.common.ExpandingSearch
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
@@ -105,6 +112,12 @@ fun LibraryScreen() {
     val artists by container.library.artists.collectAsStateWithLifecycle(emptyList())
     val history by container.library.history(200).collectAsStateWithLifecycle(emptyList())
     val kept by container.downloads.entries.collectAsStateWithLifecycle()
+    val snapshots by container.snapshots.all.collectAsStateWithLifecycle()
+    val online by container.online.now.collectAsStateWithLifecycle()
+    // The catalogue's playlists in the Library: saved ones, and ones songs were kept from.
+    val fromCatalogue = remember(saved, snapshots) {
+        saved + snapshots.values.filter { it.keptFrom && saved.none { s -> s.id == it.playlist.id } }.map { it.playlist }
+    }
     // The phone's own music: read only with the listener's permission.
     val music = rememberPhoneMusic()
 
@@ -143,9 +156,20 @@ fun LibraryScreen() {
                                 )
                             }
                         }
-                        saved.forEach { p ->
+                        fromCatalogue.forEach { p ->
                             add {
-                                FolderLink(FolderPreview("folder:${p.id}", p.title, p.author, p.artwork, emptyList()), Route.Playlist(p.id))
+                                val songs = snapshots[p.id]?.tracks.orEmpty()
+                                val here = songs.count { kept[it.id]?.status == Downloads.Status.Kept }
+                                if (!online && here == 0) {
+                                    // Nothing of it on the phone, and no connection to fetch it: grey, and closed.
+                                    Box {
+                                        FolderLink(FolderPreview("folder:${p.id}", p.title, "Needs a connection", p.artwork, emptyList()), Route.Playlist(p.id), Modifier.graphicsLayer { alpha = 0.32f })
+                                        Box(Modifier.matchParentSize().pointerInput(Unit) { detectTapGestures { actions.keep.note("None of its songs are on this phone") } })
+                                    }
+                                } else {
+                                    val detail = if (!online) "$here of ${songs.size} kept" else p.author
+                                    FolderLink(FolderPreview("folder:${p.id}", p.title, detail, p.artwork, emptyList()), Route.Playlist(p.id))
+                                }
                             }
                         }
                         add { NewTile(onClick = { naming = true }) }
@@ -292,13 +316,38 @@ fun LocalPlaylistScreen(id: Long) {
     val playback by container.playback.state.collectAsStateWithLifecycle()
     var renaming by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
     val p = playlist
     val tracks = entries.map { it.track }
+    // What the search finds: every word typed, somewhere in a song's name, its artists or its album.
+    val found = remember(tracks, query) {
+        val words = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isEmpty()) tracks
+        else tracks.filter { t -> val hay = "${t.title} ${t.artistLine} ${t.album?.title.orEmpty()}".lowercase(); words.all { it in hay } }
+    }
     // The folder that was touched stands open at once; the list follows once it has landed.
     val preview = actions.preview?.takeIf { it.key == "folder:local:$id" }
     val landed = pageLanded()
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize(), state = rememberPageListState(), contentPadding = PaddingValues(bottom = 0.dp)) {
+        // Searching, the page rises so the field stands near the top and what it finds has the room below,
+        // with a screen's room at the foot to rise into however little is found.
+        val list = rememberPageListState()
+        val rise = with(androidx.compose.ui.platform.LocalDensity.current) { 330.dp.toPx() }
+        // And comes back down as the search closes, the page as it was.
+        var risen by remember { mutableStateOf(false) }
+        LaunchedEffect(searching) {
+            val spring = app.aether.core.designsystem.theme.Motion.fluid(0.5f, 1f, 0.5f)
+            if (searching) {
+                risen = true
+                list.animateScrollBy(rise, spring)
+            } else if (risen) {
+                risen = false
+                list.animateScrollBy(-(list.firstVisibleItemIndex * 2000f + list.firstVisibleItemScrollOffset), spring)
+            }
+        }
+        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = if (searching) 900.dp else 0.dp)) {
             item { BackLine() }
             if (p == null) {
                 if (preview != null) item(key = "head") { SleeveHead(preview.title, preview.detail, preview.artwork, preview.files) {} }
@@ -311,17 +360,23 @@ fun LocalPlaylistScreen(id: Long) {
                 SleeveHead(p.title, songCount(entries.size), preview?.artwork ?: tracks.firstOrNull()?.artwork ?: Artwork.None, files) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         if (tracks.isNotEmpty()) {
-                            SleeveActions(tracks, saved = null, onSave = null, follows = app.aether.KeepSync.local(id))
-                            Spacer(Modifier.height(16.dp))
+                            // The search key opens into a field across the row; the keys come back when it closes.
+                            ExpandingSearch(
+                                open = searching,
+                                query = query,
+                                onOpen = { searching = it; if (!it) query = "" },
+                                onQuery = { query = it },
+                                hint = "Search this playlist",
+                                modifier = Modifier.padding(horizontal = 24.dp),
+                            ) {
+                                SleeveActions(tracks, saved = null, onSave = null, keepKey = false) {
+                                    GlassCircle(Glyph.Search, "Search this playlist", { searching = true }, size = 50.dp)
+                                }
+                            }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            if (tracks.isNotEmpty()) GlassPill(if (editing) "Done" else "Edit", icon = if (editing) Glyph.Check else Glyph.Edit, onClick = { editing = !editing }, lit = editing, small = true)
-                            GlassPill("Rename", onClick = { renaming = true }, small = true)
-                            GlassPill("Delete", icon = Glyph.Trash, onClick = {
-                                container.keepSync.stop(app.aether.KeepSync.local(id))
-                                scope.launch { container.library.deletePlaylist(id) }
-                                actions.nav.back()
-                            }, small = true)
+                        if (editing) {
+                            Spacer(Modifier.height(16.dp))
+                            GlassPill("Done", icon = Glyph.Check, onClick = { editing = false }, lit = true, small = true)
                         }
                         p.description?.let {
                             Spacer(Modifier.height(16.dp))
@@ -332,8 +387,9 @@ fun LocalPlaylistScreen(id: Long) {
             }
             if (!landed) return@LazyColumn
             if (entries.isEmpty()) item { Notice("No songs yet", "Hold a song anywhere and choose Add to playlist.") }
+            if (searching && query.isNotBlank() && found.isEmpty()) item { Notice("Unavailable", "No song in this playlist matches \u201c${query.trim()}\u201d.") }
             if (!editing) {
-                sleeveTracks(tracks, playing = playback.current?.id, isPlaying = playback.isPlaying, keyPrefix = "t") { i -> actions.play(tracks, i) }
+                sleeveTracks(found, playing = playback.current?.id, isPlaying = playback.isPlaying, keyPrefix = "t") { i -> actions.play(found, i) }
             } else itemsIndexed(entries, key = { _, e -> e.entryId }) { i, e ->
                 var dy by remember { mutableFloatStateOf(0f) }
                 Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp).graphicsLayer { translationY = dy }, verticalAlignment = Alignment.CenterVertically) {
@@ -359,6 +415,25 @@ fun LocalPlaylistScreen(id: Long) {
             if (tracks.isNotEmpty()) item(key = "label") { SleeveLabel(tracks.first().artwork, p.title, "Kept by you", tracks) }
             item(key = "colophon") { Colophon() }
         }
+        if (p != null) PageMenu(
+            entries = listOfNotNull(
+                PageAction(Glyph.Edit, "Rename") { renaming = true },
+                if (tracks.isNotEmpty()) PageAction(if (editing) Glyph.Check else Glyph.Queue, if (editing) "Done editing" else "Edit songs") { editing = !editing; searching = false; query = "" } else null,
+                PageAction(Glyph.Trash, "Delete") { deleting = true },
+            ),
+        )
         if (renaming && p != null) NameDialog("Rename", p.title, onDone = { name -> renaming = false; scope.launch { container.library.editPlaylist(id, name, p.description) } }, onDismiss = { renaming = false })
+        if (deleting && p != null) ConfirmDialog(
+            title = "Delete \u201c${p.title}\u201d?",
+            body = "The playlist goes for good. Its songs stay wherever else they are, and songs kept on this phone stay kept.",
+            confirm = "Delete",
+            onConfirm = {
+                deleting = false
+                container.keepSync.stop(app.aether.KeepSync.local(id))
+                scope.launch { container.library.deletePlaylist(id) }
+                actions.nav.back()
+            },
+            onDismiss = { deleting = false },
+        )
     }
 }

@@ -93,7 +93,6 @@ fun SettingsScreen() {
     val crossfade by settings.crossfade.collectAsStateWithLifecycle()
     val fullScreen by settings.fullScreen.collectAsStateWithLifecycle()
     val songVideo by settings.songVideo.collectAsStateWithLifecycle()
-    val musicVideo by settings.musicVideo.collectAsStateWithLifecycle()
     val romanise by settings.romanise.collectAsStateWithLifecycle()
     val sourcesOff by settings.lyricsSourcesOff.collectAsStateWithLifecycle()
     val eqShaping by container.equaliser.shaping.collectAsStateWithLifecycle()
@@ -278,17 +277,12 @@ fun SettingsScreen() {
                 ) { settings.setRomanise(!romanise) }
                 Toggle(
                     "Song video",
-                    "The cover's short film, in colour, for the albums Apple Music has one for. The cover shows first and the film takes over once it has loaded; on a slow connection or the data saver it isn't loaded at all. Asking sends the song's title and artist; nothing else. Needs Artist and album art.",
+                    "A song's cover gives way to its short film, in colour, for the albums Apple Music has one for, once it has loaded at its best; a music video plays as itself, in step with the music. The video key on Now Playing switches it too. Not loaded on a slow connection or the data saver. Asking Apple sends the song's title and artist; nothing else. A song's film needs Artist and album art.",
                     songVideo,
                 ) { settings.setSongVideo(!songVideo) }
-                Toggle(
-                    "Music videos",
-                    "A video (an official music video, or one someone uploaded) plays as video in place of its cover, its pictures in step with its sound: up to 1080p on Wi-Fi, 720p on mobile data, 480p on the data saver. The video key on Now Playing switches it too. What you hear is the same either way.",
-                    musicVideo,
-                ) { settings.setMusicVideo(!musicVideo) }
                 Choice(
                     title = "The cover",
-                    detail = "How the print is shown. Touch the cover on Now Playing to change it at any time.",
+                    detail = "How the print is shown on Now Playing. A song that has a music video plays it in the cover's place when you press the video key there.",
                     options = listOf("Original", "Mono", "Halftone", "ASCII", "Dither"),
                     selected = artwork.mod(ArtTreatment.Cycle.size),
                     onSelect = { settings.setArtwork(it) },
@@ -340,6 +334,21 @@ fun SettingsScreen() {
             Section("XI", "About") {
                 Spacer(Modifier.height(16.dp))
                 Txt("AETHER ${container.updates.version}", Type.TitleSmall)
+                // What went wrong last time AETHER closed by itself: kept on the phone, sent only if you send it.
+                var crash by remember { mutableStateOf(app.aether.CrashNote.read(context)) }
+                crash?.let { note ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Words("AETHER closed by itself", "What went wrong is kept on this phone. Share it with whoever makes AETHER, if you like; nothing is sent otherwise.", Modifier.weight(1f))
+                        Spacer(Modifier.width(12.dp))
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GlassPill("Share", small = true, onClick = {
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, note)
+                                context.startActivity(android.content.Intent.createChooser(send, "Share what went wrong"))
+                            })
+                            GlassPill("Clear", small = true, onClick = { app.aether.CrashNote.clear(context); crash = null })
+                        }
+                    }
+                }
                 Paragraph(
                     "Free software under the GNU GPL v3. Built on PODIUM's, LastWave's, BitChord's and NewPipe's work, Media3, Coil and Kyant's Backdrop; set in Pinyon Script, EB Garamond, Montserrat and JetBrains Mono (SIL Open Font License).",
                     top = 6.dp,

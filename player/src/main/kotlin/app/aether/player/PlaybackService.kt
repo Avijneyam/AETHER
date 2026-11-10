@@ -69,6 +69,9 @@ interface PlaybackEnvironment {
 
     /** Where a kept song's file is on the phone (the listener's Music folder), when it's been kept there. */
     fun keptFile(id: MediaId): android.net.Uri? = null
+
+    /** A song as AETHER knows it in full (kept on the phone, say), to mend a saved queue that lost its details. */
+    fun knownTrack(id: MediaId): Track? = null
     val queueStore: QueueStore
     val recorder: PlayRecorder
     val http: OkHttpClient
@@ -312,7 +315,10 @@ class PlaybackService : MediaLibraryService() {
         if (player.mediaItemCount > 0) return
         val saved = withContext(Dispatchers.IO) { runCatching { env.queueStore.load() }.getOrNull() } ?: return
         if (player.mediaItemCount > 0) return
-        player.setMediaItems(saved.tracks.map { it.toMediaItem() }, saved.index, saved.positionMs)
+        // A queue saved while a kept song played from its file could lose that song's details (1.x and
+        // 2.0): mended from what's known of it.
+        val tracks = saved.tracks.map { t -> if (t.title.isBlank()) env.knownTrack(t.id) ?: t else t }
+        player.setMediaItems(tracks.map { it.toMediaItem() }, saved.index, saved.positionMs)
         player.shuffleModeEnabled = saved.shuffle
         player.repeatMode = when (saved.repeat) {
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF

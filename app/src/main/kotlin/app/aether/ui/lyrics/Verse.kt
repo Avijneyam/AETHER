@@ -953,7 +953,7 @@ private fun ContentDrawScope.sweepTo(layout: TextLayoutResult, revealedChars: Fl
 /** Opens downward out of the line above: the room grows from nothing while the words slide down from behind it and fade up. */
 private fun Modifier.revealBelow(progress: State<Float>): Modifier = this.layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
-    val open = progress.value
+    val open = progress.value.coerceIn(0f, 1f)
     layout(placeable.width, (placeable.height * open).roundToInt()) {
         placeable.placeWithLayer(0, 0) {
             translationY = -placeable.height * (1f - open) * 0.6f
@@ -969,7 +969,7 @@ private fun Modifier.revealBelow(progress: State<Float>): Modifier = this.layout
  */
 private fun Modifier.revealBacking(progress: State<Float>, alignEnd: Boolean): Modifier = this.layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
-    val open = progress.value
+    val open = progress.value.coerceIn(0f, 1f)
     val rise = BackingRise.toPx()
     layout(placeable.width, (placeable.height * open).roundToInt()) {
         placeable.placeWithLayer(0, 0) {
@@ -1003,7 +1003,7 @@ private fun Gap(line: VLine, until: Long, isActive: Boolean, clock: MutableLongS
     val swell by animateFloatAsState(if (isActive) 1f else 0f, Motion.fluid(if (isActive) SettleS else 0.35f, 1f, 0.001f), label = "verseGap")
     Box(
         Modifier
-            .height((GapRowHeight + GapRowSpacing) * swell)
+            .height((GapRowHeight + GapRowSpacing) * swell.coerceIn(0f, 1f))
             .clipToBounds(),
         contentAlignment = Alignment.CenterStart,
     ) {

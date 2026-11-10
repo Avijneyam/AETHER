@@ -185,17 +185,15 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
     val queueSheet = rememberDragState()
     val lyricsPane = rememberDragState(give = Pull.Give, flick = Pull.Flick)
     val songVideo by container.settings.songVideo.collectAsStateWithLifecycle()
-    val musicVideo by container.settings.musicVideo.collectAsStateWithLifecycle()
     val films = remember { mutableStateListOf(FilmSlot(track)) }
-    // A video plays as itself, when the listener asks; a song has its cover and the cover's film.
+    // One key, kept: on, a song has its cover and then the cover's film, and a music video plays as
+    // itself (its cover's film only if the video can't be had); off, just the cover.
     val videos = remember { mutableStateListOf(VideoSlot(track)) }
     LaunchedEffect(track.id) {
         if (films.lastOrNull()?.track?.id != track.id) {
             films.lastOrNull()?.leaving = true
             films += FilmSlot(track)
         }
-        // A video's slot for a film is never drawn, so nothing else lets it go.
-        films.removeAll { it.leaving && it.track.isVideo }
         if (videos.lastOrNull()?.track?.id != track.id) {
             videos.lastOrNull()?.leaving = true
             videos += VideoSlot(track)
@@ -232,10 +230,18 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
                 // pixels of the cover, blurred once and cached, stretched over the screen.
                 SoftArt(track.artwork, Modifier.fillMaxSize().alpha(0.34f), px = 32)
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.2f), 0.5f to Color.Black.copy(alpha = 0.6f), 1f to Color.Black)))
-                // The cover as it is can move; a print of it stays a print. A video has no cover film.
+                // The cover as it is can move; a print of it stays a print. A music video plays as
+                // itself instead, and only gives way to its film if it can't play.
                 if (treatment == ArtTreatment.Original) films.toList().forEach { film ->
-                    if (!film.track.isVideo) key(film) {
-                        SongFilm(film, playing = state.isPlaying && !still && !lyricsUp, onGone = { films.remove(film) }, fade = stage.filmFade, modifier = Modifier.fillMaxWidth().height(stage.filmFoot))
+                    val video = videos.lastOrNull { it.track.id == film.track.id }
+                    if (!film.track.isVideo || video?.failed == true) key(film) {
+                        SongFilm(
+                            film,
+                            playing = state.isPlaying && !still && !lyricsUp,
+                            onGone = { films.remove(film) },
+                            fade = stage.filmFade,
+                            modifier = Modifier.fillMaxWidth().height(stage.filmFoot).graphicsLayer { alpha = 1f - (videos.maxOfOrNull { it.up.value } ?: 0f).coerceIn(0f, 1f) },
+                        )
                     }
                 }
                 // A video, as itself, where the print stands: under a sheet or the lyrics it holds its picture.
@@ -258,15 +264,12 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
                     track = track,
                     grain = !still,
                     filmUp = {
-                        val film = if (treatment == ArtTreatment.Original) films.filter { !it.track.isVideo }.maxOfOrNull { it.up.value } ?: 0f else 0f
+                        val film = if (treatment == ArtTreatment.Original) films.filter { f -> !f.track.isVideo || videos.any { it.track.id == f.track.id && it.failed } }.maxOfOrNull { it.up.value } ?: 0f else 0f
                         maxOf(film, videos.maxOfOrNull { it.up.value } ?: 0f)
                     },
                     index = state.index,
                     treatment = treatment,
-                    onTap = {
-                        haptics.tick()
-                        container.settings.setArtwork((treatmentIndex + 1).mod(ArtTreatment.Cycle.size))
-                    },
+                    microtype = microtype(track, state, lyrics),
                     onSwipe = { dir -> haptics.strong(); if (dir > 0) actions.playback.previous() else actions.playback.next() },
                     modifier = Modifier.at(stage.print).onPlaced { actions.keep.cover = it },
                 )
@@ -294,29 +297,20 @@ fun NowPlaying(player: DragState, onClose: () -> Unit, menu: (@Composable () -> 
                     Modifier.at(stage.close).graphicsLayer { alpha = ((player.value - 0.86f) / 0.14f).coerceIn(0f, 1f) },
                     backdrop = null,
                 )
-                // For a video, the key plays the video itself; for a song, the cover's film.
-                if (track.isVideo) {
+                // One key for the moving picture, kept: a song's film, or a music video itself.
+                run {
+                    // A music video needs nothing else; a song's film needs the art from Apple's pages.
+                    val lit = songVideo && (track.isVideo || artAllowed)
                     GlassCircle(
                         Glyph.Video,
-                        if (musicVideo) "Video on" else "Video off",
+                        if (lit) "Video on" else "Video off",
                         {
                             haptics.tick()
-                            container.settings.setMusicVideo(!musicVideo)
+                            if (!songVideo && !track.isVideo && !artAllowed) actions.keep.note("Turn on Artist and album art in Settings")
+                            else container.settings.setSongVideo(!songVideo)
                         },
                         Modifier.at(stage.film).graphicsLayer { alpha = ((player.value - 0.86f) / 0.14f).coerceIn(0f, 1f) },
-                        lit = musicVideo,
-                        backdrop = null,
-                    )
-                } else {
-                    GlassCircle(
-                        Glyph.Video,
-                        if (songVideo && artAllowed) "Song video on" else "Song video off",
-                        {
-                            haptics.tick()
-                            if (artAllowed) container.settings.setSongVideo(!songVideo) else actions.keep.note("Turn on Artist and album art in Settings")
-                        },
-                        Modifier.at(stage.film).graphicsLayer { alpha = ((player.value - 0.86f) / 0.14f).coerceIn(0f, 1f) },
-                        lit = songVideo && artAllowed,
+                        lit = lit,
                         backdrop = null,
                     )
                 }
@@ -660,7 +654,7 @@ private fun Print(
     filmUp: () -> Float,
     index: Int,
     treatment: ArtTreatment,
-    onTap: () -> Unit,
+    microtype: List<String>,
     onSwipe: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -711,7 +705,6 @@ private fun Print(
                 clip = true
                 shape = Corners.Medium
             }
-            .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) }
             .pointerInput(Unit) {
                 // Sideways only: a vertical pull belongs to Now Playing itself.
                 val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
@@ -758,7 +751,39 @@ private fun Print(
                 }
             }
         }
+        Microtype(microtype, Modifier.fillMaxSize())
     }
+}
+
+private val MicroStyle = TextStyle(fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 6.5.sp, lineHeight = 8.sp, letterSpacing = 0.08.em)
+
+/** The print's tattoo: capitals the size of a caption, laid across it in a loose grid. */
+@Composable
+private fun Microtype(lines: List<String>, modifier: Modifier) {
+    if (lines.isEmpty()) return
+    val color = Ink.White.copy(alpha = 0.86f)
+    Box(modifier.padding(10.dp)) {
+        Row(Modifier.fillMaxWidth().align(Alignment.TopCenter), horizontalArrangement = Arrangement.SpaceBetween) {
+            lines.take(4).forEach { Txt(it, MicroStyle, color = color, upper = true, maxLines = 1, modifier = Modifier.width(72.dp)) }
+        }
+        Row(Modifier.fillMaxWidth().align(Alignment.Center).offset(y = 56.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            lines.drop(4).take(9).chunked(3).forEach { col ->
+                Column(Modifier.width(84.dp)) { col.forEach { Txt(it, MicroStyle, color = color, upper = true, maxLines = 2) } }
+            }
+        }
+        Row(Modifier.fillMaxWidth().align(Alignment.BottomCenter), horizontalArrangement = Arrangement.SpaceBetween) {
+            lines.takeLast(3).forEach { Txt(it, MicroStyle, color = color, upper = true, maxLines = 1, modifier = Modifier.width(96.dp)) }
+        }
+    }
+}
+
+/** What the tattoo says: the house and the song's place, its words where it has them, its name. */
+private fun microtype(track: Track, state: PlaybackState, lyrics: Load<Lyrics?>): List<String> {
+    val head = listOf("AETHER", "N\u00ba ${state.index + 1}", track.year?.toString() ?: (track.album?.title ?: ""), quality(state.heard)?.substringBefore("   ") ?: "")
+    val words = (lyrics as? Load.Ready)?.value?.text?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() && it.length < 40 }?.distinct()?.take(9)
+    val middle = words ?: listOfNotNull(track.artistLine, track.album?.title, track.durationMs?.let { clock(it) }, track.plays, if (track.explicit) "Explicit" else null)
+    val tail = listOf(track.title, track.artists.firstOrNull()?.name ?: "", track.durationMs?.let { clock(it) } ?: "")
+    return head + middle.take(9).let { it + List((9 - it.size).coerceAtLeast(0)) { "" } } + tail
 }
 
 /** The song's words, from its source, kept for the session. Null when it has none. */

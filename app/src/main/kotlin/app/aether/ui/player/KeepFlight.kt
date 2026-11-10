@@ -89,8 +89,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 private const val FlightPx = 1080
 private const val SmallPx = 200
 
-/** How many stand at the foot; the rest are a number beside them. */
-private const val MostDiscs = 3
+/** One disc stands at the foot, the newest; how many are coming down is the number on it. */
+private const val MostDiscs = 1
 
 /** How long a song sent down waits to hear that its download has begun. */
 private const val AwaitMs = 15_000L
@@ -111,8 +111,8 @@ private val DiscSize = 56.dp
 /** From the middle of one disc to the middle of the next: they overlap a little, a stack in a row. */
 private val DiscGap = 44.dp
 
-/** How far above the screen's foot the middle of a waiting disc is held, so most of it is in the phone already. */
-private val DiscAbove = 8.dp
+/** Where the middle of a waiting disc is held: a little below the screen's foot, so it stays clear of the bars above it. */
+private val DiscAbove = (-6).dp
 
 /** How much further into the phone a disc goes as the song comes down. */
 private val DiscSinks = 10.dp
@@ -206,10 +206,9 @@ class KeepFlight(
 
     private fun activeCount() = discs.count { !it.leaving }
 
-    private fun slotX(index: Int, of: Int): Float {
-        val slots = if (of > MostDiscs) MostDiscs + 1 else of
-        return (index - (slots - 1) / 2f) * DiscGap.value * density
-    }
+    /** Every disc stands in the one place, the middle of the foot. */
+    @Suppress("UNUSED_PARAMETER")
+    private fun slotX(index: Int, of: Int): Float = 0f
 
     private fun arrange() {
         val active = discs.filterNot { it.leaving }
@@ -341,16 +340,15 @@ fun KeepOverlay(flight: KeepFlight) {
         flight.word?.let { FootWords(it, flight) }
         val active = flight.discs.filterNot { it.leaving }
         flight.discs.forEach { d ->
-            if (d.leaving || active.indexOf(d) in 0 until MostDiscs) key(d) { DiscView(d, width, height, pxPerDp) }
+            if (d.leaving || active.indexOf(d) in 0 until MostDiscs) key(d) {
+                DiscView(d, width, height, pxPerDp, count = if (!d.leaving && active.indexOf(d) == 0 && active.size > 1) active.size else 0)
+            }
         }
-        val beyond = active.size - MostDiscs
-        if (beyond > 0) More(beyond, pxPerDp)
         if (active.isNotEmpty()) {
-            val across = minOf(active.size, MostDiscs + 1)
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .size(DiscSize + DiscGap * (across - 1), 40.dp)
+                    .size(DiscSize, 40.dp)
                     .semantics {
                         role = Role.Button
                         contentDescription = "${songCount(active.size)} coming down. Show them"
@@ -362,7 +360,7 @@ fun KeepOverlay(flight: KeepFlight) {
 }
 
 @Composable
-private fun DiscView(d: Disc, width: Float, height: Float, pxPerDp: Float) {
+private fun DiscView(d: Disc, width: Float, height: Float, pxPerDp: Float, count: Int = 0) {
     val disc = DiscSize.value * pxPerDp
     val above = DiscAbove.value * pxPerDp
     val sinks = DiscSinks.value * pxPerDp
@@ -387,6 +385,17 @@ private fun DiscView(d: Disc, width: Float, height: Float, pxPerDp: Float) {
     ) {
         val px = if (d.flies) FlightPx else SmallPx
         Picture(d.track.artwork.url(px), px, Modifier.fillMaxSize())
+        // How many songs are coming down, on the cover itself, once the disc has come to rest: up to
+        // 99, then "99+".
+        if (count > 0) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = ((d.flying.value - 0.92f) / 0.08f).coerceIn(0f, 1f) }
+                    .background(Ink.Black.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center,
+            ) { Txt(if (count > 99) "99+" else "$count", Type.TitleSmall, maxLines = 1) }
+        }
     }
     Canvas(
         Modifier
@@ -402,24 +411,6 @@ private fun DiscView(d: Disc, width: Float, height: Float, pxPerDp: Float) {
         drawCircle(Ink.White.copy(alpha = 0.18f), style = Stroke(line))
         drawArc(Ink.White, -90f, 360f * d.progress, useCenter = false, style = Stroke(line))
     }
-}
-
-/** The ones there's no room for, as a number at the end of the row. */
-@Composable
-private fun BoxScope.More(beyond: Int, pxPerDp: Float) {
-    val across = (MostDiscs + 1 - 1) / 2f * DiscGap.value * pxPerDp
-    Box(
-        Modifier
-            .align(Alignment.BottomCenter)
-            .size(DiscSize)
-            .graphicsLayer {
-                translationX = across
-                translationY = size.height / 2f - DiscAbove.toPx()
-            }
-            .clip(CircleShape)
-            .background(Ink.Coal),
-        contentAlignment = Alignment.TopCenter,
-    ) { Txt("+$beyond", Type.Label, modifier = Modifier.padding(top = 8.dp), maxLines = 1) }
 }
 
 @Composable

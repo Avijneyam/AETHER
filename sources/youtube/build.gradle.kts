@@ -34,3 +34,11 @@ tasks.register<JavaExec>("streamCheck") {
     // -Pids=a,b  -Pregion=IN  -Pcount=12  -Pdiagnose=true
     args = listOf("ids", "region", "count", "diagnose").mapNotNull { name -> project.findProperty(name)?.let { "$name=$it" } }
 }
+
+// Opens every "See all" on Home live and says what each holds (needs the network).
+tasks.register<JavaExec>("browseCheck") {
+    group = "verification"
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("app.aether.sources.youtube.BrowseCheckKt")
+    args = listOf("region", "filter", "artist").mapNotNull { name -> project.findProperty(name)?.let { "$name=$it" } }
+}

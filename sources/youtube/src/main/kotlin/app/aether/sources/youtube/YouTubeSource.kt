@@ -59,8 +59,20 @@ class YouTubeSource(
     override suspend fun browse(destination: Destination): Outcome<Feed> = when (destination.key) {
         // Explore's entries that are pages of their own kind.
         YouTubeMusic.CHARTS -> charts(null).let { r -> if (r is Outcome.Ok) Outcome.Ok(Feed(r.value.sections, title = "Charts")) else r as Outcome.Err }
-        else -> yt.browse(destination.toYt()).toOutcome { it.toFeed() }
+        // A "See all" that is a playlist (Explore's Trending, say): its songs and videos, as one section.
+        else -> if (destination.key.startsWith("VL")) {
+            yt.playlist(destination.key).toOutcome { c ->
+                val page = c.toPlaylistPage(destination.key.removePrefix("VL"))
+                Feed(
+                    sections = listOf(app.aether.core.model.FeedSection(page.playlist.title, page.tracks, wide = page.tracks.isNotEmpty() && page.tracks.all { it.kind == app.aether.core.model.MediaKind.MUSIC_VIDEO || it.kind == app.aether.core.model.MediaKind.VIDEO })),
+                    title = page.playlist.title,
+                )
+            }
+        } else {
+            yt.browse(destination.toYt()).toOutcome { it.toFeed() }
+        }
     }
+
 
     override suspend fun browseMore(token: PageToken): Outcome<Feed> = yt.browseMore(token.toContinuation()).toOutcome { it.toFeed() }
 

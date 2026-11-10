@@ -1,5 +1,7 @@
 package app.aether.ui.detail
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -100,7 +102,7 @@ fun SleeveHead(title: String, detail: String?, artwork: Artwork, files: List<Fol
  * and the same key stops that.
  */
 @Composable
-fun SleeveActions(tracks: List<Track>, saved: Boolean?, onSave: (() -> Unit)?, follows: String? = null) {
+fun SleeveActions(tracks: List<Track>, saved: Boolean?, onSave: (() -> Unit)?, follows: String? = null, keepKey: Boolean = true, third: (@Composable () -> Unit)? = null) {
     val actions = LocalActions.current
     val container = LocalContainer.current
     val kept by container.downloads.entries.collectAsStateWithLifecycle()
@@ -111,9 +113,12 @@ fun SleeveActions(tracks: List<Track>, saved: Boolean?, onSave: (() -> Unit)?, f
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         GlassCircle(Glyph.Shuffle, "Shuffle", { actions.shuffle(tracks) }, size = 50.dp)
         GlassButton("Play", onClick = { actions.play(tracks, 0) })
-        if (saved != null && onSave != null) GlassCircle(if (saved) Glyph.HeartFilled else Glyph.Heart, if (saved) "Saved" else "Save", onSave, size = 50.dp, lit = saved)
-        else GlassCircle(Glyph.Plus, "Add to queue", { actions.playback.addToQueue(tracks) }, size = 50.dp)
-        GlassCircle(
+        when {
+            third != null -> third()
+            saved != null && onSave != null -> GlassCircle(if (saved) Glyph.HeartFilled else Glyph.Heart, if (saved) "Saved" else "Save", onSave, size = 50.dp, lit = saved)
+            else -> GlassCircle(Glyph.Plus, "Add to queue", { actions.playback.addToQueue(tracks) }, size = 50.dp)
+        }
+        if (keepKey) GlassCircle(
             if (done) Glyph.Check else Glyph.Download,
             when { followed -> "Keeping new songs. Stop"; allKept -> "Kept on this phone"; else -> "Keep on this phone" },
             {
@@ -253,6 +258,13 @@ private fun SleeveRow(track: Track, playing: Boolean, isPlaying: Boolean, first:
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        // Whether it's on the phone: the arrow of keeping, grey when it's kept, dim while it's coming down.
+        val kept = LocalContainer.current.downloads.entries.collectAsStateWithLifecycle().value[track.id]?.status
+        when (kept) {
+            Downloads.Status.Kept -> Icon(Glyph.Download, Modifier.padding(start = 10.dp).semantics { contentDescription = "Kept on this phone" }, size = 12.dp, color = Ink.Grey)
+            Downloads.Status.Keeping, Downloads.Status.Queued -> Icon(Glyph.Download, Modifier.padding(start = 10.dp), size = 12.dp, color = Ink.Dim)
+            else -> Unit
+        }
         IconAction(Glyph.More, "More", { actions.openMenu(track) }, size = 16.dp, tint = Ink.Grey)
     }
 }

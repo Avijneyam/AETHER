@@ -115,6 +115,7 @@ import app.aether.core.model.Playlist
 import app.aether.core.model.Podcast
 import app.aether.core.model.Track
 import app.aether.ui.common.LocalContainer
+import app.aether.ui.common.PageCornerMenu
 import app.aether.ui.menu.TrackMenu
 import app.aether.update.UpdateSheet
 import app.aether.ui.player.MiniPlayer
@@ -163,6 +164,9 @@ class Actions(
     val openMenu: (Track) -> Unit,
 ) {
     val playback = container.playback
+
+    /** The open page's menu, drawn by the shell in the top corner above the frost, as the back key is. */
+    val corner = app.aether.ui.common.PageCorner()
 
     /** What the opened folder showed, so its page can stand it open at once, before anything loads. */
     var preview by mutableStateOf<FolderPreview?>(null)
@@ -344,6 +348,7 @@ fun Shell() {
                         }
                         Corner(nav, player)
                         SettingsKey(nav, screenWidth)
+                        PageCornerMenu(actions.corner, shown = nav.depth > 1 && !player.visible)
                         Box(Modifier.fillMaxSize().placedWhile { !dockUnderPlayer }) {
                             Dock(nav, playback, player, dock)
                         }

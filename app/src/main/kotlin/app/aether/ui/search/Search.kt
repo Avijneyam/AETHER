@@ -465,7 +465,7 @@ private fun Results(query: String, filter: String?, onFilter: (String?) -> Unit)
                 contentPadding = PaddingValues(horizontal = Space.edge, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(filters, key = { it.label }) { f ->
+                items(filters.distinctBy { it.label }, key = { it.label }) { f ->
                     val on = f.label == filter
                     GlassPill(f.label, onClick = { onFilter(if (on) null else f.label) }, lit = on, small = true)
                 }

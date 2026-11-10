@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-11
+
+### Fixed
+- A queue saved while a kept song played is mended on the next start.
+- Kept songs show their name, artist and cover again on Now Playing, the mini player, the notification and Samsung's Now Bar; their covers are saved for offline.
+- A page could close the app when the catalogue listed the same card twice, or an artist had two shelves of one name.
+- Cover films play at their best quality for the screen from the first frame, portrait films included.
+- "See all" on Trending, and on an artist's Top songs and Videos, opened empty: those are playlists, and are read as playlists now. A "See all" of songs or videos shows every one, two to a row; one YouTube Music sends empty says so.
+- Now Playing's video key is one kept setting again: on, a song shows its cover and then its film at its best, and a music video plays as itself; off, just the cover.
+
+### Changed
+- A playlist's Rename, Edit and Delete live in a menu at its top; Delete asks first. Its add key is a search that opens into a field, rises to the top of the page and finds songs as you type, or says they're unavailable; the tick closes it and the page comes back as it was.
+- A small arrow beside every song kept on the phone, dim while it's still coming down.
+- One download disc at the foot, the number coming down written on its cover (up to 99+), sitting lower, clear of the bars.
+- Playlists no longer keep new songs by themselves: your own have no keep key, and a catalogue playlist's keeps its songs once.
+- Playlists from the catalogue that you saved, or kept songs from, are in your Library; offline, one with nothing kept is greyed out, and one with kept songs opens on them.
+- Now Playing's print wears its tattoo again; its style is chosen in Settings, not by touching it.
+
+### Added
+- When AETHER closes by itself, what went wrong is kept on the phone, and Settings lets you share it. Nothing is sent otherwise.
+
 ## [2.0.0] - 2026-11-10
 
 AETHER v2.
@@ -47,6 +68,7 @@ The first release.
 - **Cards:** a metal charge card of your profile or any song, black or silver, at 1080 by 1920.
 - **Privacy:** no ads, no analytics, no tracking, no account and no server of ours.
 
-[Unreleased]: https://github.com/GHOSTxASR/AETHER/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/GHOSTxASR/AETHER/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/GHOSTxASR/AETHER/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/GHOSTxASR/AETHER/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/GHOSTxASR/AETHER/releases/tag/v1.0.0

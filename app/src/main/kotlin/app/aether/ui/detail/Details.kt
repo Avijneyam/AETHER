@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -137,6 +138,17 @@ fun PlaylistScreen(id: MediaId) {
     var started by remember(id) { mutableStateOf(false) }
     val page = (load as? Load.Ready<PlaylistPage>)?.value
     LaunchedEffect(page) { if (page != null && !started) { started = true; next = page.next } }
+    // What it holds, remembered on the phone as it loads, so its kept songs can be found offline.
+    LaunchedEffect(page, more.size) { page?.let { container.snapshots.seen(it.playlist, it.tracks + more) } }
+    // Songs kept from this page put it in the Library: the ones newly kept while it's open, not ones
+    // kept long ago from somewhere else.
+    val entries by container.downloads.entries.collectAsStateWithLifecycle()
+    val keptBefore = remember(id) { entries.keys.toSet() }
+    LaunchedEffect(entries, page, more.size) {
+        val ids = page?.let { (it.tracks + more).map { t -> t.id }.toSet() } ?: return@LaunchedEffect
+        if (entries.keys.any { it in ids && it !in keptBefore }) container.snapshots.keptFrom(id)
+    }
+    val snapshots by container.snapshots.all.collectAsStateWithLifecycle()
     // The folder that was touched stands open at once; the list follows once it has landed.
     val preview = actions.preview?.takeIf { it.key == "folder:$id" }
     val landed = pageLanded()
@@ -149,7 +161,24 @@ fun PlaylistScreen(id: MediaId) {
                 }
                 if (landed) pageLoading()
             }
-            is Load.Failed -> item { Notice(load.title, load.body, action = "Try again", onAction = retry) }
+            is Load.Failed -> {
+                // Offline, a playlist with songs kept from it opens on those songs.
+                val snapshot = snapshots[id]
+                val kept = snapshot?.tracks?.filter { entries[it.id]?.status == app.aether.player.Downloads.Status.Kept }.orEmpty()
+                if (snapshot == null || kept.isEmpty()) {
+                    item { Notice(load.title, load.body, action = "Try again", onAction = retry) }
+                } else {
+                    item(key = "head") {
+                        SleeveHead(snapshot.playlist.title, "${kept.size} of ${snapshot.tracks.size} kept on this phone", snapshot.playlist.artwork, kept.take(3).map { FolderFile(it.title, it.artwork) }) {
+                            SleeveActions(kept, saved = null, onSave = null)
+                        }
+                    }
+                    if (landed) {
+                        sleeveTracks(kept, playing = playback.current?.id, isPlaying = playback.isPlaying, keyPrefix = "t") { i -> actions.play(kept, i) }
+                        item(key = "colophon") { Colophon() }
+                    }
+                }
+            }
             is Load.Ready -> {
                 val p = load.value
                 val all = p.tracks + more
@@ -158,7 +187,7 @@ fun PlaylistScreen(id: MediaId) {
                     // reloads into something else once its list arrives.
                     val files = preview?.files ?: remember(p.tracks.firstOrNull()?.id) { all.take(3).map { FolderFile(it.title, it.artwork) } }
                     SleeveHead(preview?.title ?: p.playlist.title, preview?.detail ?: p.playlist.author ?: songCount(all.size), preview?.artwork ?: p.playlist.artwork, files) {
-                        SleeveActions(all, saved = saved, onSave = { scope.launch { container.library.save(p.playlist, !saved) } }, follows = app.aether.KeepSync.playlist(id))
+                        SleeveActions(all, saved = saved, onSave = { scope.launch { container.library.save(p.playlist, !saved) } })
                     }
                 }
                 if (!landed) return@LazyColumn
@@ -220,7 +249,8 @@ fun ArtistScreen(id: MediaId) {
                             onClick = { scope.launch { container.library.follow(a.artist, !followed) } })
                     }
                 }
-                items(a.sections, key = { "s:${it.title}" }) { section ->
+                // Two shelves can share a name ("Singles"): the place keeps the key unique.
+                itemsIndexed(a.sections, key = { i, s -> "s:$i:${s.title}" }) { _, section ->
                     if (section.style == SectionStyle.LIST) {
                         Column(Modifier.separate().padding(top = 48.dp)) {
                             app.aether.core.designsystem.component.SectionHeading(section.title)
@@ -244,11 +274,11 @@ fun BrowseScreen(destination: Destination, title: String?) {
     val container = LocalContainer.current
     val source = container.sources.of(destination.source) ?: return
     val (load, retry) = rememberLoad("browse:${destination.key}:${destination.params}") { source.browse(destination) }
-    FeedPage(title, load, retry)
+    FeedPage(title, load, retry, whole = true)
 }
 
 @Composable
-private fun FeedPage(title: String?, load: Load<Feed>, retry: () -> Unit, extra: (@Composable () -> Unit)? = null) {
+private fun FeedPage(title: String?, load: Load<Feed>, retry: () -> Unit, whole: Boolean = false, extra: (@Composable () -> Unit)? = null) {
     LazyColumn(Modifier.fillMaxSize(), state = rememberPageListState(), contentPadding = PaddingValues(bottom = 0.dp)) {
         item { BackLine() }
         item {
@@ -260,7 +290,9 @@ private fun FeedPage(title: String?, load: Load<Feed>, retry: () -> Unit, extra:
             Load.Loading -> pageLoading()
             is Load.Failed -> item { Notice(load.title, load.body, action = "Try again", onAction = retry) }
             is Load.Ready -> {
-                sections(load.value.sections, topSpace = 48.dp)
+                // A page the service sends with nothing on it says so, rather than standing blank.
+                if (load.value.sections.all { it.items.isEmpty() }) item { Notice("Nothing here", "YouTube Music sent this page with nothing on it. Try again later.", action = "Try again", onAction = retry) }
+                sections(load.value.sections, topSpace = 48.dp, whole = whole)
                 item(key = "colophon") { Colophon() }
             }
         }

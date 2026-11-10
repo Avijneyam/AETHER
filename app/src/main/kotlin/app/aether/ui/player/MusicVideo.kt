@@ -126,8 +126,8 @@ fun MusicVideo(slot: VideoSlot, playing: Boolean, onGone: () -> Unit, modifier: 
     val container = LocalContainer.current
     val context = LocalContext.current
     val track = slot.track
-    val wanted by container.settings.musicVideo.collectAsStateWithLifecycle()
     val saver by container.settings.efficient.collectAsStateWithLifecycle()
+    val wanted by container.settings.songVideo.collectAsStateWithLifecycle()
     val on = wanted && track.isVideo && !slot.leaving
     // The player goes when the slot does.
     DisposableEffect(slot) { onDispose { slot.release() } }

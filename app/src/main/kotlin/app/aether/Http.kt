@@ -26,4 +26,4 @@ suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
 }
 
 /** How AETHER names itself to the services it asks: plainly, and nothing about the listener. */
-const val UserAgent = "AETHER/2.0 (Android music player)"
+const val UserAgent = "AETHER/2.1 (Android music player)"

@@ -18,6 +18,7 @@ import app.aether.core.model.Track
 import app.aether.player.PlaybackConnection
 import app.aether.core.data.EqualiserStore
 import app.aether.core.model.EqProfile
+import app.aether.core.data.PlaylistSnapshots
 import app.aether.player.PlaybackEnvironment
 import kotlinx.coroutines.flow.StateFlow
 import app.aether.sources.youtube.YouTubeSource
@@ -94,6 +95,12 @@ class Container(app: Application) {
     val local = LocalSource(app) { uri -> downloads.files.isKept(uri) }
     val sources = SourceManager(listOf(youtube, local), primaryId = youtube.id)
     val catalog = Catalog()
+
+    /** What each catalogue playlist holds, as last seen, for its kept songs to be found offline. */
+    val snapshots = PlaylistSnapshots(app)
+
+    /** Whether the phone can reach the internet now. */
+    val online = Online(app)
     val playback = PlaybackConnection(app, scope)
 
     /**
@@ -199,7 +206,31 @@ class AetherApp : Application(), PlaybackEnvironment, SingletonImageLoader.Facto
 
     override fun onCreate() {
         super.onCreate()
+        CrashNote.keep(this)
         container = Container(this)
+        keepCoversOffline()
+    }
+
+    /**
+     * A kept song plays without a connection, so its cover must show without one too: each kept song's
+     * cover, at every size the catalogue gives, is fetched into the image cache once as it's kept.
+     */
+    private fun keepCoversOffline() {
+        val fetched = HashSet<String>()
+        container.scope.launch {
+            container.downloads.entries.collect { entries ->
+                val loader = coil3.SingletonImageLoader.get(this@AetherApp)
+                entries.values.filter { it.status == app.aether.player.Downloads.Status.Kept }
+                    .flatMap { e -> e.track.artwork.sizes.map { it.url } }
+                    .filter { it.startsWith("http") && fetched.add(it) }
+                    .forEach { url ->
+                        loader.enqueue(
+                            coil3.request.ImageRequest.Builder(this@AetherApp).data(url)
+                                .memoryCachePolicy(coil3.request.CachePolicy.DISABLED).build(),
+                        )
+                    }
+            }
+        }
     }
 
     // --- The engine's needs ---
@@ -208,6 +239,7 @@ class AetherApp : Application(), PlaybackEnvironment, SingletonImageLoader.Facto
         container.sources.stream(id, container.settings.efficient.value, purpose, track)
     override fun invalidate(id: MediaId) = container.sources.invalidate(id)
     override fun keptFile(id: MediaId): android.net.Uri? = container.downloads.keptFile(id)
+    override fun knownTrack(id: MediaId): Track? = container.downloads.entries.value[id]?.track?.takeIf { it.title.isNotBlank() }
     override val queueStore: QueueStore get() = container.queueStore
     override val recorder: PlayRecorder get() = container.library
     override val http: OkHttpClient get() = container.http

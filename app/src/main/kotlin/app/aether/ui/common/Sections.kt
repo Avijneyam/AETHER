@@ -1,5 +1,6 @@
 package app.aether.ui.common
 
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -122,7 +123,8 @@ fun CardRow(items: List<MediaEntity>, wide: Boolean = false) {
             contentPadding = PaddingValues(horizontal = Space.edge, vertical = 22.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            items(items, key = { it.stableKey() }) { EntityCard(it, wide) }
+            // The catalogue sometimes lists a card twice; a repeated key would end the app.
+            items(items.distinctBy { it.stableKey() }, key = { it.stableKey() }) { EntityCard(it, wide) }
         }
         // Beneath the cards (the row keeps room above for what it lifts), where the row is.
         StepIndicator(state, Modifier.offset(y = (-6).dp))
@@ -156,9 +158,19 @@ private fun LinkRow(pair: List<Link>, modifier: Modifier = Modifier) {
  * Sections as rows of a list. A grid of tiles comes row by row, so a shelf of fifty moods and genres
  * is made as it's reached, not all at once in the frame it first appears.
  */
-fun LazyListScope.sections(sections: List<FeedSection>, topSpace: Dp = 52.dp, tileLimit: Int = Int.MAX_VALUE, onAllTiles: (() -> Unit)? = null) {
+fun LazyListScope.sections(sections: List<FeedSection>, topSpace: Dp = 52.dp, tileLimit: Int = Int.MAX_VALUE, onAllTiles: (() -> Unit)? = null, whole: Boolean = false) {
     sections.forEachIndexed { index, section ->
         val links = section.items.filterIsInstance<Link>()
+        val tracks = section.items.filterIsInstance<Track>()
+        if (whole && tracks.isNotEmpty() && tracks.size == section.items.size) {
+            // A page of its own: every song and video in it, two to a row.
+            if (section.title.isNotBlank()) item(key = "h:$index:${section.title}") {
+                SectionHeading(section.title, Modifier.padding(top = topSpace, bottom = 18.dp), strapline = section.strapline)
+            } else item(key = "h:$index") { Spacer(Modifier.height(18.dp)) }
+            val rows = tracks.distinctBy { it.id }.chunked(2)
+            items(rows.size, key = { "g:$index:$it" }) { i -> TrackGridRow(rows[i], wide = section.wide, all = tracks) }
+            return@forEachIndexed
+        }
         if (links.isNotEmpty() && links.size == section.items.size) {
             val more = if (links.size > tileLimit) onAllTiles else null
             item(key = "h:$index:${section.title}") {
@@ -170,6 +182,21 @@ fun LazyListScope.sections(sections: List<FeedSection>, topSpace: Dp = 52.dp, ti
             }
         } else {
             item(key = "s:$index:${section.title}") { SectionBlock(section, topSpace = topSpace) }
+        }
+    }
+}
+
+/** Two cards of a page's grid, each half the width; touched, a song plays among the page's. */
+@Composable
+private fun TrackGridRow(pair: List<Track>, wide: Boolean, all: List<Track>) {
+    val actions = LocalActions.current
+    BoxWithConstraints(Modifier.separate().fillMaxWidth().padding(horizontal = Space.edge).padding(bottom = 14.dp)) {
+        val each = (maxWidth - 14.dp) / 2
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            pair.forEach { t ->
+                // A wide card already runs half again as wide: it's given its half and no more.
+                TrackCard(t, onClick = { actions.play(all, all.indexOf(t).coerceAtLeast(0)) }, width = if (wide) each / 1.45f else each, wide = wide)
+            }
         }
     }
 }

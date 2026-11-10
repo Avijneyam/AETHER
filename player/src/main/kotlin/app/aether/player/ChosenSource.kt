@@ -75,7 +75,7 @@ internal class ChosenSources(
     private suspend fun choose(id: MediaId, item: MediaItem): MediaSource {
         env.keptFile(id)?.let { file ->
             return ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))
-                .createMediaSource(MediaItem.Builder().setUri(file).setMediaId(item.mediaId).build())
+                .createMediaSource(item.buildUpon().setUri(file).setMimeType(null).build())
         }
         if (AudioStore.kept(context, id)) return plain.createMediaSource(item)
         val stream = when (val outcome = env.stream(id, StreamPurpose.LISTEN, item.toTrack())) {
@@ -92,11 +92,11 @@ internal class ChosenSources(
      */
     fun copySource(stream: Stream, item: MediaItem): MediaSource = when (stream.manifest) {
         Stream.Manifest.NONE -> ProgressiveMediaSource.Factory(pieces(stream)).apply { errors?.let(::setLoadErrorHandlingPolicy) }
-            .createMediaSource(MediaItem.Builder().setUri(stream.url).setMediaId(item.mediaId).build())
+            .createMediaSource(item.buildUpon().setUri(stream.url).setMimeType(null).build())
         Stream.Manifest.DASH -> DashMediaSource.Factory(pieces(stream)).apply { errors?.let(::setLoadErrorHandlingPolicy) }
-            .createMediaSource(MediaItem.Builder().setUri(stream.url).setMimeType(MimeTypes.APPLICATION_MPD).setMediaId(item.mediaId).build())
+            .createMediaSource(item.buildUpon().setUri(stream.url).setMimeType(MimeTypes.APPLICATION_MPD).build())
         Stream.Manifest.HLS -> HlsMediaSource.Factory(pieces(stream)).apply { errors?.let(::setLoadErrorHandlingPolicy) }
-            .createMediaSource(MediaItem.Builder().setUri(stream.url).setMimeType(MimeTypes.APPLICATION_M3U8).setMediaId(item.mediaId).build())
+            .createMediaSource(item.buildUpon().setUri(stream.url).setMimeType(MimeTypes.APPLICATION_M3U8).build())
     }
 
     /** A manifest's pieces, fetched with the headers its source asked for. */
