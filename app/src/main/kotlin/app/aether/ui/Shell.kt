@@ -12,13 +12,12 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -98,7 +97,6 @@ import app.aether.core.designsystem.glass.LocalReduceMotion
 import app.aether.core.designsystem.glass.liquidGlass
 import app.aether.core.designsystem.glass.liquidTouch
 import app.aether.core.designsystem.glass.rememberLiquidState
-import app.aether.core.designsystem.glass.translucent
 import app.aether.core.designsystem.theme.Corners
 import app.aether.core.designsystem.theme.Ink
 import app.aether.core.designsystem.theme.Motion
@@ -541,11 +539,15 @@ private fun dayLine(today: LocalDate): String {
 }
 
 /** How much of the foot of the screen the dock takes with the mini player up, above the navigation bar. */
-internal val DockHeight get() = Bar + Gap + Bar + Gap
+internal val DockHeight get() = Bar + Gap + Mini + Gap
 
-private val Bar = 64.dp
-private val Folded = 56.dp
-private val Gap = 10.dp
+private val Bar = 44.dp
+private val RoomsWidth = 180.dp
+private val Mini = 50.dp
+private val Folded = 50.dp
+private val Gap = 8.dp
+private val MiniEdge = 6.dp
+private val Inset = Space.edge - MiniEdge
 
 /**
  * The dock folds away as you read down a page and comes back as you head up it, or when you touch
@@ -629,9 +631,9 @@ private fun BoxScope.Dock(nav: Navigator, playback: PlaybackState, player: DragS
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-            .padding(horizontal = Space.edge)
+            .padding(horizontal = MiniEdge)
             .padding(bottom = Gap)
-            .height(Bar + Gap + Bar),
+            .height(Bar + Gap + Mini),
     ) {
         val full = maxWidth
         // Drawn first, so while it rises it comes from behind the bar.
@@ -640,7 +642,7 @@ private fun BoxScope.Dock(nav: Navigator, playback: PlaybackState, player: DragS
                 playback,
                 onOpen = { player.show() },
                 modifier = Modifier
-                    .between({ dock.fold.value }, Frame(0.dp, Bar + Gap, full, Bar), Frame(Folded + Gap, 0.dp, full - Folded - Gap, Folded))
+                    .between({ dock.fold.value }, Frame(0.dp, Bar + Gap, full, Mini), Frame(Inset + Folded + Gap, 0.dp, full - Inset * 2 - Folded - Gap, Folded))
                     .graphicsLayer {
                         val e = emerge.value
                         val folded = dock.fold.value > 0.5f
@@ -664,7 +666,7 @@ private fun BoxScope.Dock(nav: Navigator, playback: PlaybackState, player: DragS
 @Composable
 private fun BoxScope.DockFrost(dock: DockState, hasMedia: Boolean) {
     val bottom = WindowInsets.navigationBarsIgnoringVisibility.asPaddingValues().calculateBottomPadding()
-    val open = if (hasMedia) Bar + Gap + Bar else Bar
+    val open = if (hasMedia) Bar + Gap + Mini else Bar
     EdgeBlur(Edge.Bottom, bottom + Gap + lerp(open, Folded, dock.fold.value.coerceIn(0f, 1f)) + 52.dp)
 }
 
@@ -676,8 +678,8 @@ private fun Tab.glyph(): Glyph = when (this) {
 }
 
 /**
- * The rooms in one capsule of liquid glass. Folded, it's a circle holding the room you're in;
- * touching the circle unfolds the dock.
+ * The rooms in one small capsule of liquid glass, centred under the song. Folded, it's a circle
+ * holding the room you're in; touching the circle unfolds the dock.
  */
 @Composable
 private fun TabBar(nav: Navigator, dock: DockState, full: Dp) {
@@ -687,7 +689,7 @@ private fun TabBar(nav: Navigator, dock: DockState, full: Dp) {
     val barGlass = rememberLayerBackdrop()
     Box(
         Modifier
-            .between({ dock.fold.value }, Frame(0.dp, 0.dp, full, Bar), Frame(0.dp, 0.dp, Folded, Folded))
+            .between({ dock.fold.value }, Frame((full - RoomsWidth) / 2, 0.dp, RoomsWidth, Bar), Frame(Inset, 0.dp, Folded, Folded))
             .then(if (dock.folded) Modifier.semantics { role = Role.Button; contentDescription = "${nav.tab.label}. Show the rooms" } else Modifier)
             .liquidGlass(Corners.Pill, GlassWeight.Control, liquid, export = barGlass)
             // Clipped only while folding, so the lifted lens can stand past the bar's edges.
@@ -697,14 +699,14 @@ private fun TabBar(nav: Navigator, dock: DockState, full: Dp) {
             }
             .liquidTouch(liquid, reduce) { if (dock.folded) dock.unfold() },
     ) {
-        // Open: the rooms, laid out at full width and fading as the glass folds in around them.
+        // Open: the rooms, laid out at the bar's width and fading as the glass folds in around them.
         Rooms(
             nav,
             barGlass = barGlass,
             enabled = !dock.folded,
             modifier = Modifier
                 .wrapContentWidth(Alignment.Start, unbounded = true)
-                .width(full)
+                .width(RoomsWidth)
                 .height(Bar)
                 .align(Alignment.CenterStart)
                 .graphicsLayer { alpha = (1f - dock.fold.value * 2.2f).coerceIn(0f, 1f) },
@@ -713,14 +715,14 @@ private fun TabBar(nav: Navigator, dock: DockState, full: Dp) {
         Icon(
             nav.tab.glyph(),
             Modifier.align(Alignment.Center).graphicsLayer { alpha = ((dock.fold.value - 0.45f) / 0.55f).coerceIn(0f, 1f) },
-            size = 21.dp,
+            size = 19.dp,
         )
     }
 }
 
 /**
- * The rooms on the bar, and the lit capsule marking the one you're in: a drop of light you can
- * hold. Press and drag it along the bar and it lifts (with liquid glass, into a clear lens standing
+ * The rooms on the bar, as marks without words, and the white capsule marking the one you're in: a
+ * drop of light you can hold. Press and drag it along the bar and it lifts (with liquid glass, into a clear lens standing
  * taller than the bar, bending the bar's glass and the rooms beneath it, as iOS 26's does; after
  * BitChord's), leans with your speed and brightens the rooms it passes, ticking as it crosses each;
  * let go and it snaps, with a little give, to the nearest (a flick carries it on), sheds its glass
@@ -736,7 +738,7 @@ private fun Rooms(nav: Navigator, barGlass: LayerBackdrop, enabled: Boolean, mod
     val tabs = Tab.entries
     // The row of rooms, recorded for the lens to refract.
     val row = rememberLayerBackdrop()
-    BoxWithConstraints(modifier.padding(5.dp)) {
+    BoxWithConstraints(modifier.padding(4.dp)) {
         val slot = constraints.maxWidth / tabs.size.toFloat()
         val slotDp = maxWidth / tabs.size
         val x = remember { Animatable(nav.tab.ordinal * slot) }
@@ -749,7 +751,7 @@ private fun Rooms(nav: Navigator, barGlass: LayerBackdrop, enabled: Boolean, mod
         val at = if (slot > 0f) x.value / slot else 0f
 
         val lensOn = liquidGlassOn && page != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-        // The flat capsule under the rooms; with the lens it gives way while the lens is up.
+        // The flat white capsule under the rooms; with the lens it gives way while the lens is up.
         Box(
             Modifier
                 .width(slotDp)
@@ -762,13 +764,15 @@ private fun Rooms(nav: Navigator, barGlass: LayerBackdrop, enabled: Boolean, mod
                     scaleY = 1f + 0.12f * l - 0.5f * abs(s)
                     alpha = if (lensOn) 1f - l.coerceIn(0f, 1f) else 1f
                 }
-                .translucent(Corners.Pill, lit = true, strength = 1f + 0.6f * lift.value),
+                .background(Ink.White.copy(alpha = 0.92f), Corners.Pill),
         )
+        // On the white capsule a room is black; while the clear lens is up it goes back to white.
+        val lit = if (lensOn) lerp(Ink.Black, Ink.White, lift.value.coerceIn(0f, 1f)) else Ink.Black
         Row(Modifier.fillMaxSize().layerBackdrop(row)) {
             tabs.forEach { tab ->
                 val near = (1f - abs(at - tab.ordinal)).coerceIn(0f, 1f)
-                val color = lerp(Ink.Grey, Ink.White, near)
-                Column(
+                val color = lerp(Ink.Grey, lit, near)
+                Box(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -784,12 +788,9 @@ private fun Rooms(nav: Navigator, barGlass: LayerBackdrop, enabled: Boolean, mod
                             scaleX = k
                             scaleY = k
                         },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(tab.glyph(), size = 19.dp, color = color)
-                    Spacer(Modifier.height(3.dp))
-                    Txt(tab.label, Type.Label.copy(fontSize = Type.Label.fontSize * 0.86f), color = color, upper = true)
+                    Icon(tab.glyph(), size = 18.dp, color = color)
                 }
             }
         }
