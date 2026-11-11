@@ -69,21 +69,22 @@ fun MiniPlayer(state: PlaybackState, onOpen: () -> Unit, modifier: Modifier = Mo
             val fraction = if (duration > 0) (position.value.toFloat() / duration).coerceIn(0f, 1f) else 0f
             drawRect(Ink.White.copy(alpha = 0.16f), size = Size(size.width * fraction, size.height))
         }
-        Row(Modifier.fillMaxWidth().padding(start = 7.dp).align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 7.dp, end = 3.dp).align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
             TreatedArtwork(track.artwork, ArtTreatment.Original, Modifier.size(36.dp).clip(Corners.of(8.dp)), sizeHintPx = 144)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Txt(track.title, Type.TitleSmall, maxLines = 1)
                 Txt(if (state.status == PlaybackStatus.ERROR) state.error ?: "" else track.artistLine, Type.Meta, color = Ink.Grey, maxLines = 1)
             }
-            IconAction(Glyph.Previous, "Previous", { haptics.strong(); actions.playback.previous() }, size = 18.dp)
+            IconAction(Glyph.Previous, "Previous", { haptics.strong(); actions.playback.previous() }, Modifier.size(44.dp), size = 18.dp)
             IconAction(
                 if (state.isPlaying || state.status == PlaybackStatus.BUFFERING || state.status == PlaybackStatus.LOADING) Glyph.Pause else Glyph.Play,
                 if (state.isPlaying) "Pause" else "Play",
                 { haptics.strong(); actions.playback.toggle() },
+                Modifier.size(44.dp),
                 size = 20.dp,
             )
-            IconAction(Glyph.Next, "Next", { haptics.strong(); actions.playback.next() }, size = 18.dp)
+            IconAction(Glyph.Next, "Next", { haptics.strong(); actions.playback.next() }, Modifier.size(44.dp), size = 18.dp)
         }
     }
 }
