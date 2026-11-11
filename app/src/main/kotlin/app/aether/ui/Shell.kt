@@ -542,12 +542,11 @@ private fun dayLine(today: LocalDate): String {
 internal val DockHeight get() = Bar + Gap + Mini + Gap
 
 private val Bar = 44.dp
-private val RoomsWidth = 180.dp
+private val RoomsWidth = 168.dp
 private val Mini = 50.dp
 private val Folded = 50.dp
 private val Gap = 8.dp
-private val MiniEdge = 6.dp
-private val Inset = Space.edge - MiniEdge
+private val MiniInset = 4.dp
 
 /**
  * The dock folds away as you read down a page and comes back as you head up it, or when you touch
@@ -631,7 +630,7 @@ private fun BoxScope.Dock(nav: Navigator, playback: PlaybackState, player: DragS
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-            .padding(horizontal = MiniEdge)
+            .padding(horizontal = Space.edge)
             .padding(bottom = Gap)
             .height(Bar + Gap + Mini),
     ) {
@@ -642,7 +641,7 @@ private fun BoxScope.Dock(nav: Navigator, playback: PlaybackState, player: DragS
                 playback,
                 onOpen = { player.show() },
                 modifier = Modifier
-                    .between({ dock.fold.value }, Frame(0.dp, Bar + Gap, full, Mini), Frame(Inset + Folded + Gap, 0.dp, full - Inset * 2 - Folded - Gap, Folded))
+                    .between({ dock.fold.value }, Frame(MiniInset, Bar + Gap, full - MiniInset * 2, Mini), Frame(Folded + Gap, 0.dp, full - Folded - Gap, Folded))
                     .graphicsLayer {
                         val e = emerge.value
                         val folded = dock.fold.value > 0.5f
@@ -689,7 +688,7 @@ private fun TabBar(nav: Navigator, dock: DockState, full: Dp) {
     val barGlass = rememberLayerBackdrop()
     Box(
         Modifier
-            .between({ dock.fold.value }, Frame((full - RoomsWidth) / 2, 0.dp, RoomsWidth, Bar), Frame(Inset, 0.dp, Folded, Folded))
+            .between({ dock.fold.value }, Frame((full - RoomsWidth) / 2, 0.dp, RoomsWidth, Bar), Frame(0.dp, 0.dp, Folded, Folded))
             .then(if (dock.folded) Modifier.semantics { role = Role.Button; contentDescription = "${nav.tab.label}. Show the rooms" } else Modifier)
             .liquidGlass(Corners.Pill, GlassWeight.Control, liquid, export = barGlass)
             // Clipped only while folding, so the lifted lens can stand past the bar's edges.
@@ -738,7 +737,7 @@ private fun Rooms(nav: Navigator, barGlass: LayerBackdrop, enabled: Boolean, mod
     val tabs = Tab.entries
     // The row of rooms, recorded for the lens to refract.
     val row = rememberLayerBackdrop()
-    BoxWithConstraints(modifier.padding(4.dp)) {
+    BoxWithConstraints(modifier.padding(3.dp)) {
         val slot = constraints.maxWidth / tabs.size.toFloat()
         val slotDp = maxWidth / tabs.size
         val x = remember { Animatable(nav.tab.ordinal * slot) }
