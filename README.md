@@ -6,7 +6,7 @@ Built around the sound. Unlike anything you've used.
 </p>
 
 <p align="center">
-  <a href="https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v2.1.apk"><img alt="Download the APK" src="https://img.shields.io/badge/Download-APK-ffffff?style=for-the-badge&labelColor=000000" /></a>
+  <a href="https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v2.2.apk"><img alt="Download the APK" src="https://img.shields.io/badge/Download-APK-ffffff?style=for-the-badge&labelColor=000000" /></a>
   <a href="https://github.com/GHOSTxASR/AETHER/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/GHOSTxASR/AETHER?style=for-the-badge&labelColor=000000&color=ffffff" /></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/License-GPL--3.0-ffffff?style=for-the-badge&labelColor=000000" /></a>
   <img alt="Android 10 or later" src="https://img.shields.io/badge/Android-10%2B-ffffff?style=for-the-badge&labelColor=000000" />
@@ -34,7 +34,7 @@ It plays all of YouTube Music and your own files through an audio path that repo
 
 ## Download
 
-1. Download **[AETHER v2.1.apk](https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v2.1.apk)** from the latest release.
+1. Download **[AETHER v2.2.apk](https://github.com/GHOSTxASR/AETHER/releases/latest/download/AETHER.v2.2.apk)** from the latest release.
 2. Open it on your phone. Android asks once to allow installs from your browser or file manager.
 3. Open AETHER and press play.
 

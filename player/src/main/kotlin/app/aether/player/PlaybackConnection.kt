@@ -117,6 +117,11 @@ class PlaybackConnection(private val context: Context, private val scope: Corout
         if (fresh.isNotEmpty()) c.addMediaItems(fresh.map { it.toMediaItem() })
     }
 
+    /** A song in the queue told better (same song, same sound): its words change where it stands. */
+    fun mend(track: Track) = with { c ->
+        (0 until c.mediaItemCount).filter { c.getMediaItemAt(it).mediaId == track.id.value }.forEach { c.replaceMediaItem(it, track.toMediaItem()) }
+    }
+
     fun move(from: Int, to: Int) = with { c -> if (from in 0 until c.mediaItemCount && to in 0 until c.mediaItemCount) c.moveMediaItem(from, to) }
     fun remove(index: Int) = with { c -> if (index in 0 until c.mediaItemCount) c.removeMediaItem(index) }
     fun clearUpcoming() = with { c -> if (c.currentMediaItemIndex + 1 < c.mediaItemCount) c.removeMediaItems(c.currentMediaItemIndex + 1, c.mediaItemCount) }

@@ -158,7 +158,7 @@ private val CanvasWidthDp = 411.43.dp
 private val CanvasHeightDp = 731.43.dp
 
 @Stable
-class CardExport(private val scope: CoroutineScope, private val settings: Settings, private val library: Library) {
+class CardExport(private val scope: CoroutineScope, private val settings: Settings, private val library: Library, private val container: app.aether.Container) {
     var content by mutableStateOf<CardContent?>(null)
         private set
 
@@ -169,7 +169,7 @@ class CardExport(private val scope: CoroutineScope, private val settings: Settin
 
     fun openSong(track: Track) {
         scope.launch {
-            val history = library.history(StatsWindow).first()
+            val history = mended(library.history(StatsWindow).first(), container)
             show(CardContent.Song(track, withContext(Dispatchers.Default) { factsOf(track, history, settings.profileName.value) }))
         }
     }

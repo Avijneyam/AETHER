@@ -101,6 +101,7 @@ class Container(app: Application) {
 
     /** Whether the phone can reach the internet now. */
     val online = Online(app)
+    val accountPlaylists by lazy { AccountPlaylists(app, scope, account, sources, library, online) }
     val playback = PlaybackConnection(app, scope)
 
     /**
@@ -209,6 +210,7 @@ class AetherApp : Application(), PlaybackEnvironment, SingletonImageLoader.Facto
         CrashNote.keep(this)
         container = Container(this)
         keepCoversOffline()
+        container.accountPlaylists.start()
     }
 
     /**

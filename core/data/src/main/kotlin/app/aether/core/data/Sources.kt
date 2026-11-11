@@ -218,6 +218,17 @@ class SourceManager(sources: List<MusicSource>, primaryId: String, private val n
 class Settings(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("aether", Context.MODE_PRIVATE)
 
+    private val _songOrders = MutableStateFlow(
+        prefs.getStringSet(SONG_ORDERS, emptySet()).orEmpty().mapNotNull { e -> e.substringBeforeLast('=', "").takeIf { it.isNotEmpty() }?.let { it to e.substringAfterLast('=') } }.toMap(),
+    )
+    /** How each playlist's songs stand, by the playlist's key; a playlist not here is in its own order. */
+    val songOrders: StateFlow<Map<String, String>> = _songOrders.asStateFlow()
+    fun setSongOrder(playlist: String, order: String?) {
+        val next = if (order == null) _songOrders.value - playlist else _songOrders.value + (playlist to order)
+        prefs.edit().putStringSet(SONG_ORDERS, next.map { (k, v) -> "$k=$v" }.toSet()).apply()
+        _songOrders.value = next
+    }
+
     private fun flag(key: String, default: Boolean) = MutableStateFlow(prefs.getBoolean(key, default))
 
     private val _onboarded = flag(ONBOARDED, false)
@@ -428,6 +439,7 @@ class Settings(context: Context) {
         const val KEPT_COLLECTIONS = "kept_collections"
         const val CHARTS_COUNTRY = "charts_country"
         const val CROSSFADE = "crossfade"
+        const val SONG_ORDERS = "song_orders"
         const val FULL_SCREEN = "full_screen"
     }
 }

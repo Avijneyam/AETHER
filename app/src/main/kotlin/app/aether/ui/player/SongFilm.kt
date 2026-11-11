@@ -140,6 +140,7 @@ fun SongFilm(slot: FilmSlot, playing: Boolean, onGone: () -> Unit, fade: FilmFad
                 onFirstFrame = { framed = true },
                 onVideoAspect = { aspect = it },
                 mono = false,
+                finest = true,
                 modifier = Modifier.fillMaxSize().graphicsLayer {
                     // A TextureView stretches what it's given: this crops it to the space instead.
                     val here = size.width / size.height.coerceAtLeast(1f)

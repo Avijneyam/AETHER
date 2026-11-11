@@ -2,6 +2,9 @@
 
 package app.aether.ui.library
 
+import app.aether.ui.detail.inOrder
+import app.aether.ui.detail.SongOrderBar
+import app.aether.ui.detail.SongOrder
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -320,7 +323,11 @@ fun LocalPlaylistScreen(id: Long) {
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val p = playlist
-    val tracks = entries.map { it.track }
+    val orders by container.settings.songOrders.collectAsStateWithLifecycle()
+    val order = SongOrder.of(orders["local:$id"])
+    val own = entries.map { it.track }
+    // As the listener chose them to stand; Added is when each came, newest first.
+    val tracks = remember(entries, order) { own.inOrder(order) { i -> entries[i].entryId } }
     // What the search finds: every word typed, somewhere in a song's name, its artists or its album.
     val found = remember(tracks, query) {
         val words = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -386,6 +393,9 @@ fun LocalPlaylistScreen(id: Long) {
                 }
             }
             if (!landed) return@LazyColumn
+            if (entries.size > 1 && !editing && !searching) item(key = "order") {
+                SongOrderBar(order, { container.settings.setSongOrder("local:$id", it.key.takeIf { k -> k != "own" }) }, withAdded = true, Modifier.padding(horizontal = Space.edge).padding(top = 10.dp, bottom = 30.dp))
+            }
             if (entries.isEmpty()) item { Notice("No songs yet", "Hold a song anywhere and choose Add to playlist.") }
             if (searching && query.isNotBlank() && found.isEmpty()) item { Notice("Unavailable", "No song in this playlist matches \u201c${query.trim()}\u201d.") }
             if (!editing) {
@@ -393,7 +403,7 @@ fun LocalPlaylistScreen(id: Long) {
             } else itemsIndexed(entries, key = { _, e -> e.entryId }) { i, e ->
                 var dy by remember { mutableFloatStateOf(0f) }
                 Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp).graphicsLayer { translationY = dy }, verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { TrackRow(e.track, onClick = { actions.play(tracks, i) }, onLongClick = { actions.openMenu(e.track) }, trailing = {}) }
+                    Box(Modifier.weight(1f)) { TrackRow(e.track, onClick = { actions.play(own, i) }, onLongClick = { actions.openMenu(e.track) }, trailing = {}) }
                     IconAction(Glyph.Close, "Remove", { scope.launch { container.library.remove(id, e.entryId) } }, size = 13.dp)
                     Box(
                         Modifier.size(40.dp).pointerInput(e.entryId) {

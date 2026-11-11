@@ -104,6 +104,9 @@ interface MusicSource {
     /** Who's signed in here, when someone is. */
     suspend fun account(): Outcome<ListenerAccount> = unsupported()
 
+    /** The playlists in the signed-in listener's own library on the service, every one of them. */
+    suspend fun accountPlaylists(): Outcome<List<Playlist>> = unsupported()
+
     suspend fun album(id: MediaId): Outcome<AlbumPage> = unsupported()
     suspend fun artist(id: MediaId): Outcome<ArtistPage> = unsupported()
     suspend fun playlist(id: MediaId): Outcome<PlaylistPage> = unsupported()

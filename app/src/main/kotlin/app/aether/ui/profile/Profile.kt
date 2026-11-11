@@ -86,12 +86,24 @@ private const val GenreArtists = 12
  * how they listen, and a metal card of it all to send to someone. Worked out on the phone from what's
  * been played here, from the very first song.
  */
+/**
+ * Plays of kept songs that 2.0 wrote down blank (no name, no artist) are told again from what the
+ * downloads know of them, so they count for whoever made them.
+ */
+internal fun mended(history: List<app.aether.core.data.Played>, container: app.aether.Container): List<app.aether.core.data.Played> {
+    val kept = container.downloads.entries.value
+    return history.map { p ->
+        if (p.track.title.isNotBlank() && p.track.artists.isNotEmpty()) p
+        else kept[p.track.id]?.track?.takeIf { it.title.isNotBlank() }?.let { p.copy(track = it) } ?: p
+    }
+}
+
 @Composable
 fun ProfileScreen() {
     val container = LocalContainer.current
     val actions = LocalActions.current
     val library = container.library
-    val stats by remember { library.history(StatsWindow).map { profileStats(it) }.flowOn(Dispatchers.Default) }.collectAsStateWithLifecycle(null)
+    val stats by remember { library.history(StatsWindow).map { profileStats(mended(it, container)) }.flowOn(Dispatchers.Default) }.collectAsStateWithLifecycle(null)
     val chosenName by container.settings.profileName.collectAsStateWithLifecycle()
     val account by produceState<ListenerAccount?>(null) { value = (container.sources.primary.account() as? Outcome.Ok)?.value }
     val consent by container.settings.artistArt.collectAsStateWithLifecycle()
@@ -125,7 +137,7 @@ fun ProfileScreen() {
                 current == null -> Unit
                 current.isEmpty -> item { Notice("It starts with one song", "Everything you play shows up here: who you come back to, when you listen, and what it adds up to. It stays on this phone.") }
                 else -> {
-                    item(key = "deck") {
+                    if (current.artists.isNotEmpty()) item(key = "deck") {
                         Column(Modifier.fillMaxWidth().padding(top = 34.dp)) {
                             SectionHeading("Most played", strapline = "Throw one aside")
                             Spacer(Modifier.height(52.dp))
@@ -241,7 +253,8 @@ private fun bandOf(s: ProfileStats): List<BandStat> {
         BandStat(
             label = "Artists",
             value = s.artistCount.toDouble(),
-            detail = "${s.artists.first().name.withoutEmoji()} leads",
+            // Plays can come with no artist named (an upload, a file): then nobody leads yet.
+            detail = s.artists.firstOrNull()?.let { "${it.name.withoutEmoji()} leads" } ?: "None named yet",
             context = "Lit bars are the three you play most",
             visual = BandVisual.Distribution(bins.ifEmpty { listOf(0) }, marked = 3),
         ),

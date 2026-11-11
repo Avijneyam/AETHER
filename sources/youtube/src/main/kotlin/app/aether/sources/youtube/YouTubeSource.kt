@@ -83,6 +83,21 @@ class YouTubeSource(
     override suspend fun account(): Outcome<app.aether.core.model.ListenerAccount> =
         yt.account().toOutcome { app.aether.core.model.ListenerAccount(it.name, it.handle, it.photo.toArtwork()) }
 
+    override suspend fun accountPlaylists(): Outcome<List<app.aether.core.model.Playlist>> {
+        val first = yt.library(YouTubeMusic.LIBRARY_PLAYLISTS)
+        val page = (first as? app.aether.ytmusic.YtResult.Success)?.value ?: return first.toOutcome { emptyList() }
+        val all = page.items.toMutableList()
+        var next = page.continuation
+        // A long library comes a page at a time; twenty pages is far past any real one.
+        var pages = 0
+        while (next != null && pages++ < 20) {
+            val more = (yt.libraryMore(next) as? app.aether.ytmusic.YtResult.Success)?.value ?: break
+            all += more.items
+            next = more.continuation
+        }
+        return Outcome.Ok(all.map { it.toEntity() }.filterIsInstance<app.aether.core.model.Playlist>().distinctBy { it.id })
+    }
+
     override suspend fun playlist(id: MediaId): Outcome<PlaylistPage> = yt.playlist(id.key).toOutcome { it.toPlaylistPage(id.key) }
 
     override suspend fun tracksMore(token: PageToken): Outcome<Page<Track>> =

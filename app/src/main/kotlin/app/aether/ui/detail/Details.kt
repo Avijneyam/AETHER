@@ -138,6 +138,15 @@ fun PlaylistScreen(id: MediaId) {
     var started by remember(id) { mutableStateOf(false) }
     val page = (load as? Load.Ready<PlaylistPage>)?.value
     LaunchedEffect(page) { if (page != null && !started) { started = true; next = page.next } }
+    val orders by container.settings.songOrders.collectAsStateWithLifecycle()
+    val order = SongOrder.of(orders["yt:${id.value}"]).takeIf { it != SongOrder.Added } ?: SongOrder.Own
+    // Sorted, the whole playlist is fetched first, so songs never jump about as pages arrive.
+    LaunchedEffect(order, next) {
+        val token = next ?: return@LaunchedEffect
+        if (order == SongOrder.Own || more.size > 5_000) return@LaunchedEffect
+        val r = source.tracksMore(token)
+        if (r is Outcome.Ok) { more += r.value.items; next = r.value.next } else next = null
+    }
     // What it holds, remembered on the phone as it loads, so its kept songs can be found offline.
     LaunchedEffect(page, more.size) { page?.let { container.snapshots.seen(it.playlist, it.tracks + more) } }
     // Songs kept from this page put it in the Library: the ones newly kept while it's open, not ones
@@ -181,7 +190,8 @@ fun PlaylistScreen(id: MediaId) {
             }
             is Load.Ready -> {
                 val p = load.value
-                val all = p.tracks + more
+                val all = (p.tracks + more).inOrder(order)
+                val whole = order == SongOrder.Own || next == null
                 item(key = "head") {
                     // The folder stays as it was when touched, its pictures already in memory: it never
                     // reloads into something else once its list arrives.
@@ -191,8 +201,12 @@ fun PlaylistScreen(id: MediaId) {
                     }
                 }
                 if (!landed) return@LazyColumn
-                sleeveTracks(all, playing = playback.current?.id, isPlaying = playback.isPlaying, keyPrefix = "t") { i -> actions.play(all, i) }
-                next?.let { token ->
+                if (p.tracks.size > 1) item(key = "order") {
+                    SongOrderBar(order, { container.settings.setSongOrder("yt:${id.value}", it.key.takeIf { k -> k != "own" }) }, withAdded = false, Modifier.padding(horizontal = Space.edge).padding(top = 10.dp, bottom = 30.dp))
+                }
+                if (whole) sleeveTracks(all, playing = playback.current?.id, isPlaying = playback.isPlaying, keyPrefix = "t") { i -> actions.play(all, i) }
+                if (!whole) item(key = "gathering") { Loading() }
+                if (order == SongOrder.Own) next?.let { token ->
                     item(key = "more:${token.value.hashCode()}") {
                         LaunchedEffect(token) {
                             val r = source.tracksMore(token)

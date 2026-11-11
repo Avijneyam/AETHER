@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-11
+
+### Fixed
+- AETHER closed as it opened for anyone whose history held a song with no artist named (an upload, or a song kept under 2.0): Profile assumed every play had one. It now says "None named yet", and those plays count for their artist again where the phone knows who it was.
+- A song chosen with no artist (some of YouTube Music's shelves and suggestions leave it out) takes its artist from YouTube's own answer for that song, a moment after it starts: Now Playing, the notification and Profile all name who made it, with no break in the sound.
+- Cover films played a middling copy (a 4.9 Mbps 1078 x 1438 film that Apple also serves at 7, 10 and 20 Mbps): every film now plays the richest copy the phone can decode within its size.
+
+### Added
+- Playlists in your YouTube Music library come into AETHER's Library when you're signed in, and stay up to date; signing out takes away what the sync brought.
+- Sort a playlist's songs by your order, title, artist, album, when they were added (your own playlists) or length. Each playlist keeps its own choice; a long YouTube playlist is fetched whole before it's sorted.
+- A song's cover film on Now Playing plays Apple's finest copy, on mobile data too (the data saver still loads no film) (up to 2160 square, 2048 x 2732 tall), drawn down to the screen: sharper than a screen-sized copy drawn up.
+
 ## [2.1.0] - 2026-11-11
 
 ### Fixed
@@ -68,7 +80,8 @@ The first release.
 - **Cards:** a metal charge card of your profile or any song, black or silver, at 1080 by 1920.
 - **Privacy:** no ads, no analytics, no tracking, no account and no server of ours.
 
-[Unreleased]: https://github.com/GHOSTxASR/AETHER/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/GHOSTxASR/AETHER/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/GHOSTxASR/AETHER/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/GHOSTxASR/AETHER/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/GHOSTxASR/AETHER/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/GHOSTxASR/AETHER/releases/tag/v1.0.0

@@ -40,5 +40,5 @@ tasks.register<JavaExec>("browseCheck") {
     group = "verification"
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("app.aether.sources.youtube.BrowseCheckKt")
-    args = listOf("region", "filter", "artist").mapNotNull { name -> project.findProperty(name)?.let { "$name=$it" } }
+    args = listOf("region", "filter", "artist", "album", "radio").mapNotNull { name -> project.findProperty(name)?.let { "$name=$it" } }
 }

@@ -199,6 +199,21 @@ class Actions(
         container.scope.launch { container.library.remember(tracks) }
         playback.play(tracks, index)
         if (tracks.size == 1) extendWithRadio(tracks[0])
+        else tracks.getOrNull(index)?.takeIf { it.bare }?.let { t -> container.scope.launch { container.sources.of(t.id)?.upNext(t)?.let { (it as? Outcome.Ok)?.value?.tracks?.let { r -> mend(t, r) } } } }
+    }
+
+    private val Track.bare get() = artists.isEmpty() || title.isBlank()
+
+    /**
+     * A song chosen with no artist (some of the service's shelves leave it out) takes its artist, and
+     * its name if it had none, from the service's own answer for that song; it stays the song it was.
+     */
+    private suspend fun mend(track: Track, told: List<Track>) {
+        if (!track.bare) return
+        val same = told.firstOrNull { it.id == track.id && !it.bare } ?: return
+        val better = track.copy(title = track.title.ifBlank { same.title }, artists = same.artists, album = track.album ?: same.album)
+        container.library.remember(listOf(better))
+        playback.mend(better)
     }
 
     /**
@@ -216,7 +231,10 @@ class Actions(
         container.scope.launch {
             val source = container.sources.of(track.id) ?: return@launch
             val next = source.upNext(track)
-            if (next is Outcome.Ok) playback.extend(next.value.tracks.filter { it.id != track.id })
+            if (next is Outcome.Ok) {
+                mend(track, next.value.tracks)
+                playback.extend(next.value.tracks.filter { it.id != track.id })
+            }
         }
     }
 
@@ -257,7 +275,7 @@ fun Shell() {
     val context = LocalContext.current
     val haptics = LocalHaptics.current
     val keep = remember { KeepFlight(context, flightScope, container.downloads, haptics) }
-    val card = remember { CardExport(flightScope, container.settings, container.library) }
+    val card = remember { CardExport(flightScope, container.settings, container.library, container) }
     keep.onOpenList = {
         keepsInPlayer = player.value > 0.5f
         keeps.show()

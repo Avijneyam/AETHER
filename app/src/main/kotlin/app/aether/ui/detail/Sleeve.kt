@@ -291,3 +291,45 @@ fun SleeveLabel(artwork: Artwork, title: String, by: String?, tracks: List<Track
         }
     }
 }
+
+/** The ways a playlist's songs can stand; [Added] only where the playlist knows when each came. */
+enum class SongOrder(val key: String, val label: String) {
+    Own("own", "Your order"), Title("title", "Title"), Artist("artist", "Artist"), Album("album", "Album"), Added("added", "Added"), Length("length", "Length");
+
+    companion object {
+        fun of(key: String?) = entries.firstOrNull { it.key == key } ?: Own
+    }
+}
+
+/**
+ * The songs in [order]. Names compare as the phone's language does; songs without what's sorted on
+ * go last; [added] ranks songs by when they came (larger is newer), newest first.
+ */
+fun List<Track>.inOrder(order: SongOrder, added: ((Int) -> Long)? = null): List<Track> {
+    val words = java.text.Collator.getInstance().apply { strength = java.text.Collator.PRIMARY }
+    fun byText(key: (Track) -> String?) = withIndex().sortedWith { a, b ->
+        val x = key(a.value)?.takeIf { it.isNotBlank() }
+        val y = key(b.value)?.takeIf { it.isNotBlank() }
+        when {
+            x == null && y == null -> a.index - b.index
+            x == null -> 1
+            y == null -> -1
+            else -> words.compare(x, y).takeIf { it != 0 } ?: (a.index - b.index)
+        }
+    }.map { it.value }
+    return when (order) {
+        SongOrder.Own -> this
+        SongOrder.Title -> byText { it.title }
+        SongOrder.Artist -> byText { it.artistLine }
+        SongOrder.Album -> byText { it.album?.title }
+        SongOrder.Added -> if (added == null) this else withIndex().sortedByDescending { added(it.index) }.map { it.value }
+        SongOrder.Length -> withIndex().sortedWith(compareBy<IndexedValue<Track>> { it.value.durationMs == null }.thenBy { it.value.durationMs ?: 0L }.thenBy { it.index }).map { it.value }
+    }
+}
+
+/** The choice of order, in the tab bar's glass: one tap, the lit drop sliding to it. */
+@Composable
+fun SongOrderBar(order: SongOrder, onOrder: (SongOrder) -> Unit, withAdded: Boolean, modifier: Modifier = Modifier) {
+    val choices = SongOrder.entries.filter { withAdded || it != SongOrder.Added }
+    app.aether.core.designsystem.component.GlassSegments(choices.map { it.label }, choices.indexOf(order).coerceAtLeast(0), { onOrder(choices[it]) }, modifier)
+}
