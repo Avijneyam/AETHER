@@ -11,12 +11,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -40,10 +39,13 @@ import app.aether.core.model.PlaybackStatus
 import app.aether.ui.LocalActions
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
+/** The mini player's own shape: a rounded slab, not a capsule, so the song's progress can fill it. */
+private val Slab = Corners.of(15.dp)
+
 /**
- * The song that's playing, wherever you are: a capsule of glass above the rooms. Tap or lift it to
- * open Now Playing (its play and next keys only do what they say); a hairline of light along its
- * foot is where the song has got to.
+ * The song that's playing, wherever you are: a slab of the tab bar's glass above the rooms. Tap or
+ * lift it to open Now Playing (its keys only do what they say). How far the song has got fills the
+ * slab with light from its left edge.
  */
 @Composable
 fun MiniPlayer(state: PlaybackState, onOpen: () -> Unit, modifier: Modifier = Modifier) {
@@ -54,33 +56,34 @@ fun MiniPlayer(state: PlaybackState, onOpen: () -> Unit, modifier: Modifier = Mo
     Box(
         modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .height(50.dp)
             .semantics { contentDescription = "Now playing: ${track.title}, ${track.artistLine}. Open" }
-            .liquidGlass(Corners.Pill, GlassWeight.Control, liquid)
+            .liquidGlass(Slab, GlassWeight.Control, liquid)
             .liquidTouch(liquid, LocalReduceMotion.current, childrenFirst = true) { onOpen() }
             .pointerInput(Unit) { detectVerticalDragGestures { _, dy -> if (dy < -12) onOpen() } },
     ) {
-        Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp).align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
-            TreatedArtwork(track.artwork, ArtTreatment.Original, Modifier.size(44.dp).clip(Corners.Pill), sizeHintPx = 160)
-            Spacer(Modifier.width(12.dp))
+        // The position is read while drawing: a tick redraws this fill and nothing else.
+        val position = actions.playback.position.collectAsStateWithLifecycle()
+        val duration = state.durationMs
+        Canvas(Modifier.matchParentSize().clip(Slab)) {
+            val fraction = if (duration > 0) (position.value.toFloat() / duration).coerceIn(0f, 1f) else 0f
+            drawRect(Ink.White.copy(alpha = 0.16f), size = Size(size.width * fraction, size.height))
+        }
+        Row(Modifier.fillMaxWidth().padding(start = 7.dp).align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+            TreatedArtwork(track.artwork, ArtTreatment.Original, Modifier.size(36.dp).clip(Corners.of(8.dp)), sizeHintPx = 144)
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Txt(track.title, Type.TitleSmall, maxLines = 1)
                 Txt(if (state.status == PlaybackStatus.ERROR) state.error ?: "" else track.artistLine, Type.Meta, color = Ink.Grey, maxLines = 1)
             }
+            IconAction(Glyph.Previous, "Previous", { haptics.strong(); actions.playback.previous() }, size = 18.dp)
             IconAction(
                 if (state.isPlaying || state.status == PlaybackStatus.BUFFERING || state.status == PlaybackStatus.LOADING) Glyph.Pause else Glyph.Play,
                 if (state.isPlaying) "Pause" else "Play",
                 { haptics.strong(); actions.playback.toggle() },
+                size = 20.dp,
             )
-            IconAction(Glyph.Next, "Next", { haptics.strong(); actions.playback.next() })
-        }
-        // The position is read while drawing: a tick redraws this line and nothing else.
-        val position = actions.playback.position.collectAsStateWithLifecycle()
-        val duration = state.durationMs
-        Canvas(Modifier.fillMaxWidth().height(1.dp).align(Alignment.BottomCenter).padding(horizontal = 22.dp)) {
-            val fraction = if (duration > 0) (position.value.toFloat() / duration).coerceIn(0f, 1f) else 0f
-            drawLine(Ink.White.copy(alpha = 0.12f), Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
-            drawLine(Ink.White.copy(alpha = 0.8f), Offset(0f, 0f), Offset(size.width * fraction, 0f), 1.dp.toPx())
+            IconAction(Glyph.Next, "Next", { haptics.strong(); actions.playback.next() }, size = 18.dp)
         }
     }
 }
